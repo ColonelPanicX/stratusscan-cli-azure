@@ -1,0 +1,129 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stratusscan-cli-azure"
+version = "0.1.0"
+description = "Azure resource inventory and export tool for infrastructure audits and FedRAMP evidence collection"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "GPL-3.0"}
+
+authors = [
+    {name = "StratusScan Contributors"}
+]
+
+keywords = [
+    "azure",
+    "security",
+    "audit",
+    "cloud",
+    "scanner",
+    "compliance",
+    "export",
+    "inventory",
+    "fedramp",
+]
+
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: System Administrators",
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+    "Topic :: System :: Systems Administration",
+    "Topic :: Utilities",
+]
+
+dependencies = [
+    "azure-identity>=1.15.0",
+    "azure-mgmt-resource>=23.0.0",
+    "azure-mgmt-compute>=30.0.0",
+    "azure-mgmt-network>=25.0.0",
+    "azure-mgmt-storage>=21.0.0",
+    "azure-mgmt-keyvault>=10.0.0",
+    "azure-mgmt-authorization>=4.0.0",
+    "azure-mgmt-containerservice>=28.0.0",
+    "azure-mgmt-web>=7.0.0",
+    "azure-mgmt-sql>=3.0.0",
+    "azure-mgmt-cosmosdb>=9.0.0",
+    "pandas>=2.0.0",
+    "openpyxl>=3.1.0",
+    "python-dateutil>=2.8.2",
+    "questionary>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.5.0",
+]
+
+[project.scripts]
+azurescan = "azurescan:main"
+azurescan-configure = "configure:main"
+
+[project.urls]
+Repository = "https://github.com/ColonelPanicX/StratusScan-CLI-Azure"
+
+[tool.setuptools]
+py-modules = ["azurescan", "configure", "utils"]
+include-package-data = true
+
+[tool.setuptools.package-data]
+"*" = ["reference/*.json", "config.json", "policies/*.json"]
+
+[tool.black]
+line-length = 100
+target-version = ['py39', 'py310', 'py311']
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "SIM"]
+ignore = [
+    "E501",
+    "B008",
+]
+
+exclude = [".git", ".venv", "venv", "__pycache__", "build", "dist"]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+addopts = [
+    "-v",
+    "--strict-markers",
+    "-m", "not azure",
+    "--cov=.",
+    "--cov-report=html",
+    "--cov-report=term-missing",
+]
+
+markers = [
+    "slow: marks tests as slow",
+    "integration: marks tests as integration tests",
+    "azure: marks tests that interact with Azure (requires credentials)",
+]
+
+[tool.coverage.run]
+source = ["."]
+omit = ["*/tests/*", "*/test_*.py", "*/.venv/*", "*/venv/*"]
+
+[tool.coverage.html]
+directory = "htmlcov"
