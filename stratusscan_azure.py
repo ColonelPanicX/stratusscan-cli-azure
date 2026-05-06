@@ -108,11 +108,19 @@ def execute_script(script: Path) -> int:
 
 
 def run_all() -> int:
+    results = []
     rc = 0
     for key in ("1", "2", "3", "4"):
         name, script = MENU[key]
         print_section(name.upper())
-        rc |= execute_script(script)
+        sub_rc = execute_script(script)
+        rc |= sub_rc
+        results.append((name, sub_rc))
+
+    print_section("RUN ALL — SUMMARY")
+    for name, sub_rc in results:
+        marker = "OK  " if sub_rc == 0 else "FAIL"
+        print(f"  [{marker}] {name}")
     return rc
 
 
