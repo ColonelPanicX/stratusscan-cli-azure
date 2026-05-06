@@ -1,307 +1,197 @@
-# StratusScanCLI-Azure
+# StratusScan-Azure
 
-[![Version: 0.1.0](https://img.shields.io/badge/version-0.1.0--alpha-red.svg)](#project-status)
-[![Status: Pre-Alpha](https://img.shields.io/badge/status-pre--alpha-red.svg)](#project-status)
+[![Version: 0.1.0-alpha](https://img.shields.io/badge/version-0.1.0--alpha-blue.svg)](#)
+[![Status: Alpha](https://img.shields.io/badge/status-alpha-orange.svg)](#)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL%203.0-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-[![Azure Public](https://img.shields.io/badge/Azure-Public%20Cloud-0078D4.svg)](https://portal.azure.com)
-[![Azure Government](https://img.shields.io/badge/Azure-US%20Government-blue.svg)](https://portal.azure.us)
+[![Azure Cloud Shell](https://img.shields.io/badge/runs%20in-Azure%20Cloud%20Shell-0078D4.svg)](https://shell.azure.com)
 
----
+Azure equivalent of [StratusScan-CLI](https://github.com/ColonelPanicX/StratusScan-CLI). Read-only
+Azure resource inventory exporter — multi-subscription, multi-cloud, and designed
+to run cleanly in **Azure Cloud Shell**.
 
-> [!WARNING]
-> **This project is under heavy, active development and is not ready for general use.**
->
-> APIs, output formats, and script interfaces may change without notice between commits.
-> No guarantees of stability, correctness, or completeness are made at this stage.
-> **Do not use this in production environments until a stable release is cut.**
->
-> Track progress toward the first release on the [dev branch](https://github.com/ColonelPanicX/stratusscan-cli-azure/tree/dev).
-> All development happens on `dev`. `main` is reserved for release snapshots only.
-
----
-
-A Python CLI tool for exporting Azure resource inventories to Excel workbooks. Supports 21 Azure services across Public and US Government cloud environments, targeting infrastructure audits, FedRAMP evidence collection, and cost analysis.
-
-Sibling project to [StratusScan-CLI (AWS)](https://github.com/ColonelPanicX/StratusScan-CLI). Shares the same philosophy, output format, and architectural patterns — not a fork.
+[Quick Start](#quick-start) • [What It Captures](#what-it-captures) • [Cloud Shell](#running-in-azure-cloud-shell) • [Output](#output) • [Roadmap](#roadmap)
 
 ---
 
 ## Quick Start
 
-### Azure Cloud Shell (recommended)
+```bash
+# Local (already authenticated via `az login`)
+git clone <repo-url> StratusScan-Azure
+cd StratusScan-Azure
+pip install --user azure-identity azure-mgmt-resource azure-mgmt-resourcegraph \
+                   azure-mgmt-authorization azure-mgmt-policyinsights \
+                   pandas openpyxl requests
+python configure.py        # one-time scope + subscription mapping
+python stratusscan_azure.py
+```
 
-The tool is designed to work in a fresh [Azure Cloud Shell](https://shell.azure.com) session with no extra setup. Credentials are injected automatically.
+The main menu offers each exporter individually or "Run all" to produce a full
+inventory snapshot.
+
+---
+
+## What It Captures
+
+StratusScan-Azure leans on **Azure Resource Graph** (one KQL endpoint that
+indexes every ARM resource), then layers four targeted exporters on top to
+cover what Resource Graph doesn't reach:
+
+| Script | Source | What it covers |
+|---|---|---|
+| `resource_graph_export.py` | Resource Graph | Every ARM resource (VMs, storage, networks, AKS, KVs, App Service, …), Advisor recommendations, Defender for Cloud assessments, Policy compliance state, Service Health, RBAC assignments |
+| `entra_id_export.py` | Microsoft Graph | Users, groups, applications, service principals, directory roles, Conditional Access policies |
+| `rbac_export.py` | Authorization API | Role assignments + **custom role definitions** with full action lists per subscription |
+| `policy_export.py` | Resource Manager + Policy Insights | Policy assignments, custom definitions, current compliance state with non-compliant counts |
+
+**Multi-subscription:** All exporters discover every accessible subscription and
+fan out automatically (filtered by `default_scope` in `config.json`).
+
+**Multi-cloud:** Public, US Gov, and China clouds are detected via `az cloud show`
+and Microsoft Graph endpoints are routed accordingly.
+
+---
+
+## Running in Azure Cloud Shell
+
+Cloud Shell is the recommended runtime — auth is automatic and the bundled tools
+match the StratusScan-AWS philosophy of "no credentials lying on disk."
 
 ```bash
-git clone https://github.com/ColonelPanicX/stratusscan-cli-azure.git
-cd stratusscan-cli-azure
-pip install -r <(python -c "import tomllib; d=tomllib.load(open('pyproject.toml','rb')); print('\n'.join(d['project']['dependencies']))")
+# 1. Open https://shell.azure.com (Bash)
+# 2. Clone and install
+git clone <repo-url> StratusScan-Azure
+cd StratusScan-Azure
+pip install --user azure-mgmt-resourcegraph azure-mgmt-policyinsights openpyxl
+
+# (azure-identity, azure-mgmt-resource, azure-mgmt-authorization, pandas,
+#  and requests are typically preinstalled in Cloud Shell)
+
+# 3. Run
 python configure.py
-python azurescan.py
+python stratusscan_azure.py
 ```
 
-### Local Machine
+**Persistent output:** When run inside Cloud Shell, exports go to
+`~/clouddrive/stratusscan-azure/output/` so they survive session timeouts. The
+contents are visible in the Storage account backing your Cloud Shell home.
 
-Requires [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) installed and authenticated.
-
-```bash
-git clone https://github.com/ColonelPanicX/stratusscan-cli-azure.git
-cd stratusscan-cli-azure
-
-# Install dependencies
-pip install azure-identity azure-mgmt-resource azure-mgmt-compute azure-mgmt-network \
-    azure-mgmt-storage azure-mgmt-keyvault azure-mgmt-authorization \
-    azure-mgmt-containerservice azure-mgmt-web azure-mgmt-sql azure-mgmt-cosmosdb \
-    pandas openpyxl python-dateutil questionary
-
-# Authenticate
-az login
-
-# Configure subscription and environment
-python configure.py
-
-# Launch AzureScan
-python azurescan.py
-```
-
-### pip install (once published)
-
-```bash
-pip install stratusscan-cli-azure
-azurescan-configure
-azurescan
-```
-
-> **Note:** PyPI publishing is pending the first stable release.
+**Download to local:** From Cloud Shell, `download <filename>` pushes a file to
+your browser. Or `cp output/*.xlsx ~/clouddrive/` and grab them via the Storage
+Explorer.
 
 ---
 
 ## Authentication
 
-StratusScanCLI-Azure uses `DefaultAzureCredential` from `azure-identity`, which tries credential sources in this order:
-
-| Environment | How to authenticate |
+| Environment | What's used |
 |---|---|
-| Azure Cloud Shell | Automatic — no action needed |
-| Local machine | `az login` |
-| Service Principal | Set `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_CLIENT_SECRET` env vars |
-| Managed Identity | Automatic when running on an Azure VM or App Service |
+| Azure Cloud Shell | The signed-in user's token (instant — no setup) |
+| Dev box | `az login` → `AzureCliCredential` |
+| Azure VM / App Service | System-assigned managed identity (`DefaultAzureCredential`) |
+| CI / pipelines | `AZURE_CLIENT_ID` + `AZURE_CLIENT_SECRET` + `AZURE_TENANT_ID` env vars |
 
-No profile management or custom credential handling is needed — one call covers all environments.
+Required Azure RBAC: **Reader** at the subscription scope (or higher).
+Required Microsoft Graph permissions: **Directory.Read.All** equivalent for
+the Entra ID exporter (most users have this via their AAD role).
+
+---
+
+## Output
+
+Files land in `~/clouddrive/stratusscan-azure/output/` (Cloud Shell) or `./output/`
+(elsewhere), named:
+
+```
+{TENANT}-{exporter}-{suffix}-export-{MM.DD.YYYY}.xlsx
+```
+
+Each file is multi-sheet — one sheet per Resource Graph table or Microsoft
+Graph endpoint, plus a `Summary` sheet with row counts.
+
+Same-day re-runs append `-v2`, `-v3`, … so you don't lose a previous export.
 
 ---
 
 ## Configuration
 
-Run the configuration wizard before first use:
+`config.json` (created by `python configure.py`) controls:
 
-```bash
-python configure.py
-```
-
-The wizard:
-1. Selects Azure cloud environment (Public or US Government)
-2. Discovers all subscriptions accessible to your credentials
-3. Prompts for subscription selection (single, all, or manual ID entry)
-4. Writes `config.json`
-
-### Manual configuration
-
-Edit `config.json` directly:
-
-```json
+```jsonc
 {
-  "environment": "public",
-  "subscriptions": [
-    {
-      "id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
-      "name": "MY-SUBSCRIPTION",
-      "state": "Enabled",
-      "tenant_id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-    }
-  ],
-  "default_subscription_id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+  "tenant_name": "CONTOSO",
+  "subscription_mappings": {
+    "00000000-0000-0000-0000-000000000000": "PROD",
+    "11111111-1111-1111-1111-111111111111": "DEV"
+  },
+  "default_scope": {
+    "mode": "all",
+    "selected_subscription_ids": []
+  },
+  "azure_cloud": "AzureCloud"
 }
 ```
 
-For Azure US Government, set `"environment": "government"` or the environment variable:
+`mode` may be `all` (every Enabled subscription) or `selected` (only IDs in
+`selected_subscription_ids`).
 
-```bash
-export AZURE_ENVIRONMENT=AzureUSGovernment
+---
+
+## Project Layout
+
 ```
-
-### CI / Unattended execution
-
-```bash
-AZURESCAN_AUTO_RUN=1 AZURESCAN_SUBSCRIPTIONS=sub-id-1,sub-id-2 python azurescan.py
-```
-
-Individual exporters also support CI mode:
-
-```bash
-AZURESCAN_AUTO_RUN=1 python scripts/compute/virtual_machines_export.py
+StratusScan-Azure/
+├── stratusscan_azure.py       # main menu launcher
+├── configure.py               # interactive setup
+├── sslib/
+│   ├── auth.py                # credential chain
+│   ├── cloud.py               # Public/USGov/China detection + Graph endpoints
+│   ├── config.py              # config.json read/write
+│   ├── output.py              # output paths + xlsx writer (Cloud Shell aware)
+│   └── subscriptions.py       # subscription enumeration + scope filtering
+├── scripts/
+│   ├── resource_graph_export.py
+│   ├── entra_id_export.py
+│   ├── rbac_export.py
+│   └── policy_export.py
+├── tests/test_smoke.py
+├── pyproject.toml
+└── config-template.json
 ```
 
 ---
 
-## Usage
+## Roadmap
 
-### Main menu
+**v0.2 — Depth**
+- Cost Management exporter (subscription + resource-group spend)
+- Defender for Cloud — full alerts + recommendations (beyond what Resource Graph exposes)
+- Activity Log + Diagnostic Settings audit
+- Smart Scan equivalent: discover-then-export auto-orchestration
+- NSG flat rule export, Storage encryption deep-dive, Key Vault access policies
 
-```bash
-python azurescan.py
-```
+**v0.3 — Scale**
+- Concurrent subscription scanning (mirrors AWS-side `sslib.concurrency`)
+- Management Group scope (vs. flat subscription list)
+- Excel pivot-friendly resource-type sheet splits
 
-Select **Tier 1** or **Tier 2** from the menu, then pick an individual exporter or run all. Exports are saved to `output/` as `.xlsx` files.
-
-### Direct script execution
-
-Every exporter can run standalone:
-
-```bash
-python scripts/compute/virtual_machines_export.py
-python scripts/network/virtual_networks_export.py
-python scripts/security/role_assignments_export.py
-```
-
----
-
-## Supported Azure Resources
-
-### Tier 1 — Core Infrastructure (11 exporters)
-
-| Script | Azure Service |
-|---|---|
-| `subscriptions_export.py` | Subscriptions |
-| `resource_groups_export.py` | Resource Groups |
-| `virtual_machines_export.py` | Virtual Machines |
-| `managed_disks_export.py` | Managed Disks |
-| `virtual_networks_export.py` | Virtual Networks (VNets) |
-| `subnets_export.py` | Subnets |
-| `network_security_groups_export.py` | Network Security Groups |
-| `public_ips_export.py` | Public IP Addresses |
-| `storage_accounts_export.py` | Storage Accounts |
-| `key_vault_export.py` | Key Vault |
-| `role_assignments_export.py` | RBAC Role Assignments |
-
-### Tier 2 — Common Workloads (10 exporters)
-
-| Script | Azure Service |
-|---|---|
-| `aks_clusters_export.py` | AKS Clusters |
-| `app_service_export.py` | App Service / Web Apps |
-| `function_apps_export.py` | Function Apps |
-| `azure_sql_export.py` | Azure SQL Databases |
-| `cosmos_db_export.py` | Cosmos DB Accounts |
-| `load_balancers_export.py` | Load Balancers |
-| `application_gateway_export.py` | Application Gateways |
-| `azure_firewall_export.py` | Azure Firewalls |
-| `route_tables_export.py` | Route Tables |
-| `vnet_peerings_export.py` | VNet Peerings |
-
----
-
-## Output Files
-
-All exports use a consistent naming convention:
-
-```
-{SUBSCRIPTION-NAME}-{resource-type}-{suffix}-export-{MM.DD.YYYY}.xlsx
-```
-
-Examples:
-```
-MY-SUBSCRIPTION-virtual-machines-all-export-05.06.2026.xlsx
-MY-SUBSCRIPTION-role-assignments-all-export-05.06.2026.xlsx
-```
-
-All files land in `output/`.
-
----
-
-## Azure Permissions
-
-StratusScanCLI-Azure requires read-only access. The minimum RBAC role assignment needed is **Reader** at the subscription scope.
-
-```bash
-az role assignment create \
-  --role "Reader" \
-  --assignee <your-principal-id> \
-  --scope /subscriptions/<subscription-id>
-```
-
-A purpose-built read-only custom role definition will be provided in `policies/` in a future update.
-
----
-
-## Troubleshooting
-
-**Missing dependencies**
-```bash
-pip install azure-identity azure-mgmt-resource azure-mgmt-compute azure-mgmt-network \
-    azure-mgmt-storage azure-mgmt-keyvault azure-mgmt-authorization \
-    azure-mgmt-containerservice azure-mgmt-web azure-mgmt-sql azure-mgmt-cosmosdb \
-    pandas openpyxl
-```
-
-**Authentication errors**
-```bash
-# Local machine
-az login
-az account show   # verify active subscription
-
-# Verify DefaultAzureCredential can resolve
-python -c "from azure.identity import DefaultAzureCredential; DefaultAzureCredential().get_token('https://management.azure.com/.default')"
-```
-
-**No subscriptions found**
-- Confirm your credential has at least Reader access on one or more subscriptions
-- In Cloud Shell, run `az account list` to verify what's accessible
-
-**Azure Government connection issues**
-- Set `AZURE_ENVIRONMENT=AzureUSGovernment` before running
-- Or run `python configure.py` and select AzureUSGovernment
-
-**Getting help**
-1. Check `logs/` for detailed error messages
-2. Verify subscription access: `az account list --output table`
-3. Open an issue on GitHub with the relevant log excerpt
-
----
-
-## Project Status
-
-**Current version: 0.1.0-alpha** — pre-alpha, not production-ready.
-
-This is the initial scaffold of StratusScanCLI-Azure. The 21 exporters are written and the core architecture is in place, but the tool has not yet been validated against live Azure subscriptions. The first release will be cut once end-to-end testing is complete.
-
-### Roadmap
-
-| Version | Target |
-|---|---|
-| `0.1.0` | First stable release — 21 exporters validated, Public + Government environments |
-| `0.2.0` | Resource Graph Smart Scan, Entra ID exporters (Microsoft Graph SDK), pricing data |
-| `0.3.0+` | Multi-tenant scanning, Textual TUI |
-
----
-
-## Branch Workflow
-
-| Branch | Purpose |
-|---|---|
-| `dev` | Primary development — all PRs target `dev` first |
-| `main` | Release snapshots only — no direct commits |
-| `feature/*`, `fix/*` | Short-lived topic branches targeting `dev` |
+**v1.0 — Stable**
+- Textual TUI matching the AWS-side roadmap
+- Per-service IAM/RBAC permission policy bundles for the Reader role
 
 ---
 
 ## License
 
-GNU General Public License v3.0 — see [LICENSE](LICENSE) for details.
+GNU General Public License v3.0 — see [LICENSE](LICENSE).
 
 ---
 
 ## Acknowledgments
 
-Built with assistance from [Claude Code](https://claude.ai/code). Azure SDK for Python via [azure-sdk-for-python](https://github.com/Azure/azure-sdk-for-python). Excel export via [pandas](https://pandas.pydata.org/) and [openpyxl](https://openpyxl.readthedocs.io/).
+Built alongside [StratusScan-CLI](https://github.com/ColonelPanicX/StratusScan-CLI)
+(AWS). Powered by [Azure SDK for Python](https://github.com/Azure/azure-sdk-for-python),
+[Azure Resource Graph](https://learn.microsoft.com/en-us/azure/governance/resource-graph/),
+and [Microsoft Graph](https://learn.microsoft.com/en-us/graph/). Excel output
+via [pandas](https://pandas.pydata.org/) and [openpyxl](https://openpyxl.readthedocs.io/).

@@ -1,179 +1,118 @@
 #!/usr/bin/env python3
 """
-StratusScanCLI-Azure — Configuration Wizard
-Version: v0.1.0
+StratusScan-Azure — interactive configuration.
 
-Handles subscription discovery and selection, environment configuration,
-and writes config.json for use by azurescan.py and all exporter scripts.
+  • Detects active Azure cloud (Public / USGov / China)
+  • Lists accessible subscriptions and tenants
+  • Lets the user pick a default scope (all / selected)
+  • Writes config.json (next to this script)
 
-Usage:
-    python configure.py
+Run:  python configure.py
 """
 
 import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
+_root = Path(__file__).parent.absolute()
+if str(_root) not in sys.path:
+    sys.path.insert(0, str(_root))
 
-try:
-    import utils
-except ImportError:
-    print("ERROR: Could not import utils.py.")
-    sys.exit(1)
-
-utils.setup_logging("configure", log_to_file=True)
-utils.log_script_start("configure.py", "AzureScan Configuration Wizard")
-
-log = utils.get_logger()
+from sslib.auth import get_credential
+from sslib.cloud import detect_cloud
+from sslib.config import load_config, save_config
+from sslib.subscriptions import list_subscriptions, list_tenants
 
 
-# ---------------------------------------------------------------------------
-# Environment selection
-# ---------------------------------------------------------------------------
-
-def select_environment() -> str:
-    print("\n" + "=" * 64)
-    print("  AZURE ENVIRONMENT SELECTION")
-    print("=" * 64)
-    print("  Select the Azure cloud environment for your credentials.")
-    print()
-
-    options = [
-        "AzurePublicCloud   (commercial — portal.azure.com)",
-        "AzureUSGovernment  (FedRAMP/government — portal.azure.us)",
-    ]
-    choice = utils.prompt_menu("ENVIRONMENT", options, allow_back=False, allow_exit=True)
-    if choice == "exit":
-        sys.exit(0)
-    return "government" if choice == 2 else "public"
+def _prompt(prompt: str, default: str = "") -> str:
+    suffix = f" [{default}]" if default else ""
+    val = input(f"{prompt}{suffix}: ").strip()
+    return val or default
 
 
-# ---------------------------------------------------------------------------
-# Subscription discovery & selection
-# ---------------------------------------------------------------------------
+def main() -> int:
+    print("=" * 70)
+    print("  STRATUSSCAN-AZURE — CONFIGURATION")
+    print("=" * 70)
 
-def discover_subscriptions() -> list:
-    print("\nDiscovering accessible subscriptions...", end=" ", flush=True)
+    cloud = detect_cloud()
+    print(f"\nDetected cloud: {cloud['name']}  (Graph: {cloud['graph_endpoint']})")
+
+    print("\nResolving credentials...")
     try:
-        subs = utils.list_subscriptions()
-        print(f"found {len(subs)}.")
-        return subs
-    except Exception as exc:
-        print(f"FAILED.\nError: {exc}")
-        log.error("Subscription discovery failed: %s", exc)
-        return []
+        credential = get_credential()
+        # Force a token fetch so failures surface here, not deeper in the workflow.
+        credential.get_token("https://management.azure.com/.default")
+    except Exception as e:
+        print(f"\n  ERROR: could not authenticate ({e})")
+        print("  In Cloud Shell this should be automatic. On a dev box, run: az login")
+        return 1
 
+    print("Listing tenants...")
+    tenants = list_tenants(credential)
+    for t in tenants:
+        print(f"  - {t['id']}  ({t['default_domain'] or t['name']})")
 
-def select_subscriptions(subs: list) -> list:
+    print("\nListing subscriptions...")
+    subs = list_subscriptions(credential)
     if not subs:
-        print("No accessible subscriptions found. Check your Azure credentials.")
-        return []
+        print("  (none — your identity has no role assignments)")
+        return 1
 
-    print("\n" + "=" * 64)
-    print("  SUBSCRIPTION SELECTION")
-    print("=" * 64)
-    print("  Accessible subscriptions:\n")
-    for i, sub in enumerate(subs, 1):
-        state_label = f"  [{sub['state']}]" if sub.get("state") else ""
-        print(f"  {i:3d}. {sub['name']}{state_label}")
-        print(f"       {sub['id']}")
-    print()
+    for i, s in enumerate(subs, 1):
+        print(f"  [{i:>2}] {s['name']}  ({s['id']})  state={s['state']}")
 
-    options = [
-        "Select a single subscription (set as default)",
-        "Use all subscriptions",
-        "Enter subscription ID manually",
-    ]
-    choice = utils.prompt_menu("SUBSCRIPTION", options, allow_back=False, allow_exit=True)
-    if choice == "exit":
-        sys.exit(0)
-
-    if choice == 1:
-        while True:
-            try:
-                raw = input(f"  Enter subscription number (1–{len(subs)}): ").strip()
-                idx = int(raw) - 1
-                if 0 <= idx < len(subs):
-                    return [subs[idx]]
-                print(f"  Invalid number. Enter 1–{len(subs)}.")
-            except (ValueError, KeyboardInterrupt):
-                print()
-                return []
-
-    if choice == 2:
-        return subs
-
-    if choice == 3:
-        sub_id = input("  Enter subscription ID: ").strip()
-        if sub_id:
-            return [{"id": sub_id, "name": sub_id, "state": "Unknown", "tenant_id": ""}]
-        return []
-
-    return []
-
-
-# ---------------------------------------------------------------------------
-# Config write
-# ---------------------------------------------------------------------------
-
-def build_and_save_config(environment: str, selected_subs: list) -> dict:
-    existing = utils.get_config()
-    default_sub_id = selected_subs[0]["id"] if selected_subs else ""
-
-    config = {
-        **existing,
-        "environment": environment,
-        "subscriptions": selected_subs,
-        "default_subscription_id": default_sub_id,
+    existing = load_config()
+    cfg = {
+        "tenant_name": existing.get("tenant_name") or _prompt(
+            "\nFriendly tenant label", default="AZURE-TENANT"
+        ),
+        "subscription_mappings": existing.get("subscription_mappings", {}),
+        "default_scope": existing.get("default_scope", {"mode": "all"}),
+        "azure_cloud": cloud["name"],
+        "output_preferences": existing.get(
+            "output_preferences",
+            {"use_clouddrive_in_cloud_shell": True, "compress_after_export": False},
+        ),
     }
-    utils.save_config(config)
-    return config
 
+    print("\nMap subscription IDs to friendly names? [y/N]")
+    if input("> ").strip().lower() == "y":
+        for s in subs:
+            current = cfg["subscription_mappings"].get(s["id"], "")
+            label = _prompt(f"  {s['name']} ({s['id']})", default=current)
+            if label:
+                cfg["subscription_mappings"][s["id"]] = label
 
-def _print_summary(config: dict) -> None:
-    env_label = "AzureUSGovernment" if config["environment"] == "government" else "AzurePublicCloud"
-    print("\n" + "=" * 64)
-    print("  CONFIGURATION SAVED")
-    print("=" * 64)
-    print(f"  Environment:          {env_label}")
-    print(f"  Default subscription: {config['default_subscription_id']}")
-    print(f"  Subscriptions:        {len(config['subscriptions'])}")
-    print()
-    print("  Run azurescan.py to start exporting.")
-    print("=" * 64 + "\n")
+    print("\nDefault scope:")
+    print("  [1] all       — every Enabled subscription (default)")
+    print("  [2] selected  — only specific subscription IDs")
+    mode_choice = _prompt("  choose", default="1")
+    if mode_choice == "2":
+        print("  Enter comma-separated subscription numbers (e.g. 1,3,5):")
+        raw = input("> ").strip()
+        try:
+            indices = [int(x) - 1 for x in raw.split(",") if x.strip()]
+            cfg["default_scope"] = {
+                "mode": "selected",
+                "selected_subscription_ids": [subs[i]["id"] for i in indices if 0 <= i < len(subs)],
+            }
+        except ValueError:
+            print("  invalid input — keeping mode=all")
+            cfg["default_scope"] = {"mode": "all"}
+    else:
+        cfg["default_scope"] = {"mode": "all"}
 
-
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
-
-def main() -> None:
-    print("\n" + "=" * 64)
-    print("  StratusScanCLI-Azure — Configuration Wizard")
-    print(f"  Version: {utils.get_version()}")
-    print("=" * 64)
-    print("  This wizard configures your Azure environment and subscription.")
-    print()
-
-    environment = select_environment()
-    log.info("Environment selected: %s", environment)
-
-    subs = discover_subscriptions()
-    selected = select_subscriptions(subs)
-
-    if not selected:
-        print("No subscriptions selected. Configuration not saved.")
-        return
-
-    config = build_and_save_config(environment, selected)
-    log.info(
-        "Config saved — environment=%s, subscriptions=%d",
-        environment,
-        len(selected),
-    )
-    _print_summary(config)
+    if save_config(cfg):
+        print("\n✔ Saved config.json")
+        return 0
+    print("\n✘ Failed to save config.json")
+    return 1
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        print("\nCancelled.")
+        sys.exit(130)

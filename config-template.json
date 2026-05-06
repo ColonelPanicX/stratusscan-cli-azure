@@ -1,0 +1,20 @@
+{
+  "__comment": "StratusScan-Azure config template. Copy to config.json and customize.",
+  "tenant_name": "YOUR-TENANT",
+  "subscription_mappings": {
+    "__comment": "Map subscription IDs to friendly names. Format: 'sub-id-guid': 'PROD'",
+    "00000000-0000-0000-0000-000000000000": "EXAMPLE-PROD"
+  },
+  "default_scope": {
+    "mode": "all",
+    "__mode_options": "all | selected | management_group",
+    "selected_subscription_ids": [],
+    "management_group_id": null
+  },
+  "azure_cloud": "AzureCloud",
+  "__azure_cloud_options": "AzureCloud | AzureUSGovernment | AzureChinaCloud",
+  "output_preferences": {
+    "use_clouddrive_in_cloud_shell": true,
+    "compress_after_export": false
+  }
+}
