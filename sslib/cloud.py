@@ -9,6 +9,7 @@ the Azure CLI's reported state.
 import json
 import logging
 import subprocess
+from functools import lru_cache
 from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
@@ -21,12 +22,16 @@ GRAPH_ENDPOINTS = {
 }
 
 
+@lru_cache(maxsize=1)
 def detect_cloud() -> Dict[str, str]:
     """
     Return the active cloud info from `az cloud show`.
 
     Returns a dict with keys: name, graph_endpoint. Falls back to AzureCloud
     if `az` is not installed or the call fails.
+
+    Cached for the process lifetime — subprocess invocation is expensive and
+    the active cloud doesn't change without restarting the session.
     """
     name = "AzureCloud"
     try:
