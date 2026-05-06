@@ -70,29 +70,28 @@ def list_custom_definitions(credential, subscription_id: str) -> List[Dict[str, 
 def list_compliance_summary(credential, subscription_id: str) -> List[Dict[str, Any]]:
     """
     Aggregate non-compliant resource counts per assignment via Policy Insights.
+
+    Raises on failure so the caller's per-subscription error handling surfaces
+    the problem in the Summary sheet — silently swallowing here produced
+    misleading "Non-Compliant Assignments: 0" rows for subs where the API
+    actually errored (e.g. missing read permission).
     """
     from azure.mgmt.policyinsights import PolicyInsightsClient
 
     client = PolicyInsightsClient(credential, subscription_id)
     rows: List[Dict[str, Any]] = []
-    try:
-        # The SDK summarises against "latest" automatically; only subscription_id is needed.
-        result = client.policy_states.summarize_for_subscription(
-            subscription_id=subscription_id,
-        )
-        for sub_summary in (result.value or []):
-            for assignment in (getattr(sub_summary, "policy_assignments", None) or []):
-                results = getattr(assignment, "results", None)
-                rows.append(
-                    {
-                        "subscription_id": subscription_id,
-                        "policy_assignment_id": assignment.policy_assignment_id,
-                        "non_compliant_resources": getattr(results, "non_compliant_resources", 0),
-                        "non_compliant_policies": getattr(results, "non_compliant_policies", 0),
-                    }
-                )
-    except Exception as e:
-        logger.warning("Compliance summary failed for %s: %s", subscription_id, e)
+    result = client.policy_states.summarize_for_subscription(subscription_id=subscription_id)
+    for sub_summary in (result.value or []):
+        for assignment in (getattr(sub_summary, "policy_assignments", None) or []):
+            results = getattr(assignment, "results", None)
+            rows.append(
+                {
+                    "subscription_id": subscription_id,
+                    "policy_assignment_id": assignment.policy_assignment_id,
+                    "non_compliant_resources": getattr(results, "non_compliant_resources", 0),
+                    "non_compliant_policies": getattr(results, "non_compliant_policies", 0),
+                }
+            )
     return rows
 
 
