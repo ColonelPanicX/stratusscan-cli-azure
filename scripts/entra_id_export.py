@@ -35,7 +35,11 @@ logger = logging.getLogger(__name__)
 def graph_get_all(token: str, base: str, path: str, params: Optional[Dict] = None) -> List[Dict]:
     """
     GET a Microsoft Graph collection endpoint, following @odata.nextLink to exhaustion.
+
+    Handles 429 (Retry-After) and transient 5xx with exponential backoff.
     """
+    import time
+
     import requests
 
     url = f"{base}/v1.0{path}"
@@ -43,11 +47,27 @@ def graph_get_all(token: str, base: str, path: str, params: Optional[Dict] = Non
         from urllib.parse import urlencode
         url = f"{url}?{urlencode(params)}"
 
-    headers = {"Authorization": f"Bearer {token}", "ConsistencyLevel": "eventual"}
+    headers = {"Authorization": f"Bearer {token}"}
     items: List[Dict] = []
 
     while url:
-        resp = requests.get(url, headers=headers, timeout=60)
+        for attempt in range(5):
+            resp = requests.get(url, headers=headers, timeout=60)
+            if resp.status_code == 429:
+                wait = int(resp.headers.get("Retry-After", "5"))
+                logger.warning("Graph 429 on %s — sleeping %ds (attempt %d)", path, wait, attempt + 1)
+                time.sleep(wait)
+                continue
+            if 500 <= resp.status_code < 600:
+                wait = 2 ** attempt
+                logger.warning("Graph %d on %s — backing off %ds", resp.status_code, path, wait)
+                time.sleep(wait)
+                continue
+            break
+        else:
+            logger.error("Graph %s exhausted retries", path)
+            return items
+
         if resp.status_code == 403:
             logger.warning("403 from %s — missing directory permissions; skipping", path)
             return items
