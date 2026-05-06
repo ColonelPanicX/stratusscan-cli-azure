@@ -109,11 +109,17 @@ def _adjust_column_widths(worksheet, df) -> None:
     from openpyxl.utils import get_column_letter
 
     for i, column in enumerate(df.columns):
+        col_label = str(column)
         try:
-            width = max(df[column].astype(str).map(len).max(), len(column)) + 2
-        except (ValueError, AttributeError):
-            width = len(column) + 2
-        width = min(int(width), 50)
+            # fillna("") first — pandas 3.x with PyArrow string dtype preserves
+            # NaN (float) through astype(str), which then breaks .map(len).
+            max_len = df[column].fillna("").astype(str).map(len).max()
+            if max_len != max_len:  # NaN check (still possible for empty cols)
+                max_len = 0
+            width = max(int(max_len), len(col_label)) + 2
+        except (ValueError, AttributeError, TypeError):
+            width = len(col_label) + 2
+        width = min(width, 50)
         worksheet.column_dimensions[get_column_letter(i + 1)].width = width
 
 
@@ -139,7 +145,10 @@ def save_dataframes(dfs: Dict[str, Any], filename: str) -> Optional[Path]:
                 safe_sheet = (sheet or "Data")[:31]
                 df.to_excel(writer, sheet_name=safe_sheet, index=False)
                 if not df.empty:
-                    _adjust_column_widths(writer.sheets[safe_sheet], df)
+                    try:
+                        _adjust_column_widths(writer.sheets[safe_sheet], df)
+                    except Exception as e:
+                        logger.warning("Column width adjust failed for %s: %s", safe_sheet, e)
         logger.info("Wrote %s", path)
         return path
     except Exception as e:
