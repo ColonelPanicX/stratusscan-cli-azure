@@ -52,9 +52,12 @@ def check_dependencies() -> bool:
     for p in missing:
         print(f"  • {p}")
 
-    answer = input("\nInstall them now with `pip install --user`? [Y/n]: ").strip().lower()
+    in_venv = sys.prefix != sys.base_prefix
+    install_target = "this venv" if in_venv else "your user site (`pip --user`)"
+    answer = input(f"\nInstall them now into {install_target}? [Y/n]: ").strip().lower()
     if answer in ("", "y", "yes"):
-        cmd = [sys.executable, "-m", "pip", "install", "--user", *missing]
+        pip_args = ["install"] if in_venv else ["install", "--user"]
+        cmd = [sys.executable, "-m", "pip", *pip_args, *missing]
         result = subprocess.run(cmd)
         return result.returncode == 0
 
