@@ -68,8 +68,12 @@ def test_subscription_filter_modes() -> None:
         {"id": "a", "state": "SubscriptionState.enabled"},
         {"id": "b", "state": "SubscriptionState.disabled"},
         {"id": "c", "state": "SubscriptionState.enabled"},
+        {"id": "d", "state": "SubscriptionState.warned"},
+        {"id": "e", "state": "SubscriptionState.pastdue"},
+        {"id": "f", "state": "SubscriptionState.deleted"},
     ]
-    assert filter_subscription_ids(subs, {"default_scope": {"mode": "all"}}) == ["a", "c"]
+    # mode=all keeps everything still queryable: Enabled, Warned, PastDue
+    assert filter_subscription_ids(subs, {"default_scope": {"mode": "all"}}) == ["a", "c", "d", "e"]
     assert filter_subscription_ids(
         subs,
         {"default_scope": {"mode": "selected", "selected_subscription_ids": ["b", "c"]}},

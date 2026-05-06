@@ -69,4 +69,10 @@ def filter_subscription_ids(
         wanted = set(scope.get("selected_subscription_ids", []))
         return [s["id"] for s in subscriptions if s["id"] in wanted]
 
-    return [s["id"] for s in subscriptions if s.get("state", "").lower().endswith("enabled")]
+    # Exclude only states that aren't queryable. Warned/PastDue are billing
+    # flags but still serve ARM and Resource Graph data.
+    return [
+        s["id"]
+        for s in subscriptions
+        if s.get("state", "").lower().split(".")[-1] not in {"disabled", "deleted"}
+    ]
