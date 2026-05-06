@@ -1,0 +1,112 @@
+"""
+sslib.output — Output paths, filename conventions, and Excel writers.
+
+In Azure Cloud Shell, default output goes to ~/clouddrive/stratusscan-azure/output/
+so files survive session timeouts. Outside Cloud Shell, uses the project-local
+output/ directory.
+"""
+
+import datetime
+import logging
+import os
+from pathlib import Path
+from typing import Any, Dict, Optional
+
+logger = logging.getLogger(__name__)
+
+
+def is_cloud_shell() -> bool:
+    """
+    Detect Azure Cloud Shell.
+
+    Cloud Shell sets ACC_CLOUD and AZURE_HTTP_USER_AGENT in the environment.
+    """
+    return "ACC_CLOUD" in os.environ or "cloud-shell" in os.environ.get(
+        "AZURE_HTTP_USER_AGENT", ""
+    ).lower()
+
+
+def get_output_dir() -> Path:
+    """
+    Resolve the output directory.
+
+    Cloud Shell:  ~/clouddrive/stratusscan-azure/output/  (persistent across sessions)
+    Otherwise:    <project_root>/output/
+    """
+    if is_cloud_shell():
+        clouddrive = Path.home() / "clouddrive"
+        if clouddrive.exists():
+            d = clouddrive / "stratusscan-azure" / "output"
+            d.mkdir(parents=True, exist_ok=True)
+            return d
+
+    d = Path(__file__).parent.parent / "output"
+    d.mkdir(exist_ok=True)
+    return d
+
+
+def make_filename(scope_label: str, resource_type: str, suffix: str = "") -> str:
+    """
+    Build a standardized export filename.
+
+        {SCOPE}-{resource-type}-{suffix}-export-{MM.DD.YYYY}.xlsx
+
+    Same-day collisions get -v2, -v3, etc.
+    """
+    date = datetime.datetime.now().strftime("%m.%d.%Y")
+    label = scope_label.replace(" ", "-").replace("/", "-")
+    if suffix:
+        base = f"{label}-{resource_type}-{suffix}-export-{date}.xlsx"
+    else:
+        base = f"{label}-{resource_type}-export-{date}.xlsx"
+
+    output_dir = get_output_dir()
+    candidate = base
+    version = 2
+    while (output_dir / candidate).exists():
+        stem = base[: -len(".xlsx")]
+        candidate = f"{stem}-v{version}.xlsx"
+        version += 1
+    return candidate
+
+
+def _adjust_column_widths(worksheet, df) -> None:
+    from openpyxl.utils import get_column_letter
+
+    for i, column in enumerate(df.columns):
+        try:
+            width = max(df[column].astype(str).map(len).max(), len(column)) + 2
+        except (ValueError, AttributeError):
+            width = len(column) + 2
+        width = min(int(width), 50)
+        worksheet.column_dimensions[get_column_letter(i + 1)].width = width
+
+
+def save_dataframes(dfs: Dict[str, Any], filename: str) -> Optional[Path]:
+    """
+    Write a {sheet_name: DataFrame} dict to a multi-sheet xlsx in the output dir.
+
+    Sheet names are truncated to 31 characters (Excel limit).
+    """
+    import pandas as pd  # noqa: F401  (informs the user if pandas is missing)
+
+    if not dfs:
+        logger.warning("No data to write — skipping %s", filename)
+        return None
+
+    path = get_output_dir() / filename
+
+    try:
+        import pandas as pd
+
+        with pd.ExcelWriter(path, engine="openpyxl") as writer:
+            for sheet, df in dfs.items():
+                safe_sheet = (sheet or "Data")[:31]
+                df.to_excel(writer, sheet_name=safe_sheet, index=False)
+                if not df.empty:
+                    _adjust_column_widths(writer.sheets[safe_sheet], df)
+        logger.info("Wrote %s", path)
+        return path
+    except Exception as e:
+        logger.error("Failed to write Excel file %s: %s", path, e)
+        return None
