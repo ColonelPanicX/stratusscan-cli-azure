@@ -5,7 +5,7 @@
 A Python CLI tool that exports Azure resource inventories to Excel workbooks.
 Sibling to `stratusscan-cli` (AWS). No shared runtime code — shared philosophy and patterns.
 
-Primary use cases: infrastructure audits, FedRAMP evidence collection, cost optimization.
+Primary use cases: tenant-wide infrastructure inventory, governance snapshots, ad-hoc audits.
 
 ---
 

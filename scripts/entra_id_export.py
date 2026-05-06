@@ -27,7 +27,7 @@ if str(_root) not in sys.path:
 from sslib.auth import get_credential, get_graph_token, quiet_azure_loggers
 from sslib.cloud import detect_cloud, graph_scope_for_cloud
 from sslib.config import load_config
-from sslib.output import make_filename, save_dataframes
+from sslib.output import make_filename, save_dataframes, snapshot_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +113,11 @@ def main() -> int:
             logger.error("Graph pull %s failed: %s", path, e)
             summary.append({"Sheet": sheet, "Path": path, "Rows": f"ERROR: {e}"})
 
-    sheets = {"Summary": pd.DataFrame(summary), **sheets}
+    sheets = {
+        "Snapshot": snapshot_metadata(config, cloud),
+        "Summary": pd.DataFrame(summary),
+        **sheets,
+    }
 
     tenant = config.get("tenant_name", "AZURE-TENANT")
     filename = make_filename(tenant, "entra-id", "all")

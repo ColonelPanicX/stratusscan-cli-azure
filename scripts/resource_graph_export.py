@@ -29,8 +29,9 @@ if str(_root) not in sys.path:
     sys.path.insert(0, str(_root))
 
 from sslib.auth import get_credential, quiet_azure_loggers
+from sslib.cloud import detect_cloud
 from sslib.config import load_config
-from sslib.output import make_filename, save_dataframes
+from sslib.output import make_filename, save_dataframes, snapshot_metadata
 from sslib.subscriptions import filter_subscription_ids, list_subscriptions
 
 logger = logging.getLogger(__name__)
@@ -44,7 +45,10 @@ DEFAULT_QUERIES: List[Dict[str, str]] = [
         "table": "Resources",
         "query": (
             "Resources | project subscriptionId, resourceGroup, name, type, "
-            "kind, location, sku, identity, zones, plan, managedBy, tags, id"
+            "kind, location, "
+            "skuName=tostring(sku.name), skuTier=tostring(sku.tier), "
+            "identityType=tostring(identity.type), "
+            "zones=tostring(zones), managedBy, tags=tostring(tags), id"
         ),
     },
     {
@@ -52,7 +56,7 @@ DEFAULT_QUERIES: List[Dict[str, str]] = [
         "table": "ResourceContainers",
         "query": (
             "ResourceContainers | project subscriptionId, type, name, "
-            "tenantId, location, properties, id"
+            "tenantId, location, id"
         ),
     },
     {
@@ -101,7 +105,10 @@ DEFAULT_QUERIES: List[Dict[str, str]] = [
         "table": "HealthResources",
         "query": (
             "HealthResources | project subscriptionId, resourceGroup, type, name, "
-            "location, properties, id"
+            "location, "
+            "eventType=tostring(properties.eventType), "
+            "status=tostring(properties.status), "
+            "summary=tostring(properties.summary), id"
         ),
     },
     {
@@ -209,7 +216,11 @@ def main() -> int:
                 {"Sheet": sheet, "Table": q["table"], "Rows": f"ERROR: {e}"}
             )
 
-    sheets = {"Summary": pd.DataFrame(summary_rows), **sheets}
+    sheets = {
+        "Snapshot": snapshot_metadata(config, detect_cloud(), sub_count=len(sub_ids)),
+        "Summary": pd.DataFrame(summary_rows),
+        **sheets,
+    }
 
     tenant = config.get("tenant_name", "AZURE-TENANT")
     filename = make_filename(tenant, "resource-graph", "all")
