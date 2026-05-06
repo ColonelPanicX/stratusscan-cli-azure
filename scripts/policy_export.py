@@ -124,33 +124,41 @@ def main() -> int:
     for sub_id in sub_ids:
         label = get_subscription_label(config, sub_id, sub_names.get(sub_id, sub_id[:8]))
         print(f"  • {label} ({sub_id})...")
+
         try:
             a = list_assignments(credential, sub_id)
-            d = list_custom_definitions(credential, sub_id)
-            c = list_compliance_summary(credential, sub_id)
             all_assignments.extend(a)
+            a_status: Any = len(a)
+        except Exception as e:
+            logger.error("Assignments failed for %s: %s", sub_id, e)
+            a_status = f"ERROR: {e}"
+
+        try:
+            d = list_custom_definitions(credential, sub_id)
             all_definitions.extend(d)
+            d_status: Any = len(d)
+        except Exception as e:
+            logger.error("Custom definitions failed for %s: %s", sub_id, e)
+            d_status = f"ERROR: {e}"
+
+        try:
+            c = list_compliance_summary(credential, sub_id)
             all_compliance.extend(c)
-            summary.append(
-                {
-                    "Subscription": label,
-                    "Assignments": len(a),
-                    "Custom Definitions": len(d),
-                    "Non-Compliant Assignments": sum(
-                        1 for r in c if int(r.get("non_compliant_resources") or 0) > 0
-                    ),
-                }
+            non_compliant: Any = sum(
+                1 for r in c if int(r.get("non_compliant_resources") or 0) > 0
             )
         except Exception as e:
-            logger.error("Policy export failed for %s: %s", sub_id, e)
-            summary.append(
-                {
-                    "Subscription": label,
-                    "Assignments": f"ERROR: {e}",
-                    "Custom Definitions": 0,
-                    "Non-Compliant Assignments": 0,
-                }
-            )
+            logger.error("Compliance summary failed for %s: %s", sub_id, e)
+            non_compliant = f"ERROR: {e}"
+
+        summary.append(
+            {
+                "Subscription": label,
+                "Assignments": a_status,
+                "Custom Definitions": d_status,
+                "Non-Compliant Assignments": non_compliant,
+            }
+        )
 
     sheets = {
         "Snapshot": snapshot_metadata(config, detect_cloud(), sub_count=len(sub_ids)),
