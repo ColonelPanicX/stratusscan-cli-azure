@@ -21,8 +21,9 @@ if str(_root) not in sys.path:
     sys.path.insert(0, str(_root))
 
 from sslib.auth import get_credential, quiet_azure_loggers
+from sslib.cloud import detect_cloud
 from sslib.config import get_subscription_label, load_config
-from sslib.output import make_filename, save_dataframes
+from sslib.output import make_filename, save_dataframes, snapshot_metadata
 from sslib.subscriptions import filter_subscription_ids, list_subscriptions
 
 logger = logging.getLogger(__name__)
@@ -40,17 +41,18 @@ def export_subscription(credential, subscription_id: str) -> Dict[str, List[Dict
     role_defs_by_id: Dict[str, Dict[str, Any]] = {}
     role_defs_rows: List[Dict[str, Any]] = []
     for rd in client.role_definitions.list(scope=scope):
+        perms = rd.permissions or []
         d = {
             "id": rd.id,
             "name": rd.name,
             "role_name": rd.role_name,
             "role_type": rd.role_type,
             "description": rd.description,
-            "actions": "; ".join((rd.permissions[0].actions if rd.permissions else []) or []),
-            "not_actions": "; ".join((rd.permissions[0].not_actions if rd.permissions else []) or []),
-            "data_actions": "; ".join((rd.permissions[0].data_actions if rd.permissions else []) or []),
+            "actions": "; ".join(a for p in perms for a in (p.actions or [])),
+            "not_actions": "; ".join(a for p in perms for a in (p.not_actions or [])),
+            "data_actions": "; ".join(a for p in perms for a in (p.data_actions or [])),
             "not_data_actions": "; ".join(
-                (rd.permissions[0].not_data_actions if rd.permissions else []) or []
+                a for p in perms for a in (p.not_data_actions or [])
             ),
             "assignable_scopes": "; ".join(rd.assignable_scopes or []),
         }
@@ -95,6 +97,8 @@ def main() -> int:
         print("No subscriptions in scope.")
         return 1
 
+    sub_names = {s["id"]: s["name"] for s in subs}
+
     sheets: Dict[str, "pd.DataFrame"] = {}
     summary = []
 
@@ -102,7 +106,7 @@ def main() -> int:
     all_role_defs: List[Dict[str, Any]] = []
 
     for sub_id in sub_ids:
-        label = get_subscription_label(config, sub_id, sub_id[:8])
+        label = get_subscription_label(config, sub_id, sub_names.get(sub_id, sub_id[:8]))
         print(f"  • {label} ({sub_id})...")
         try:
             data = export_subscription(credential, sub_id)
@@ -132,6 +136,9 @@ def main() -> int:
                 }
             )
 
+    all_role_defs = list({r["id"]: r for r in all_role_defs}.values())
+
+    sheets["Snapshot"] = snapshot_metadata(config, detect_cloud(), sub_count=len(sub_ids))
     sheets["Summary"] = pd.DataFrame(summary)
     sheets["Role Assignments"] = pd.DataFrame(all_assignments)
     sheets["Custom Role Definitions"] = pd.DataFrame(all_role_defs)

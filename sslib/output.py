@@ -9,6 +9,7 @@ output/ directory.
 import datetime
 import logging
 import os
+import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -68,6 +69,40 @@ def make_filename(scope_label: str, resource_type: str, suffix: str = "") -> str
         candidate = f"{stem}-v{version}.xlsx"
         version += 1
     return candidate
+
+
+def snapshot_metadata(
+    config: Dict[str, Any],
+    cloud: Dict[str, str],
+    sub_count: Optional[int] = None,
+    exporter: Optional[str] = None,
+):
+    """
+    Build a metadata DataFrame describing when/where this snapshot was taken.
+
+    Prepend this as the first sheet of every exporter so the xlsx is
+    self-describing (filename only carries date, not time or scope context).
+    """
+    import pandas as pd
+
+    scope = (config or {}).get("default_scope", {}) or {}
+    mode = scope.get("mode", "all")
+    scope_value = f"{mode} ({sub_count} subscriptions)" if sub_count is not None else mode
+
+    captured_at = (
+        datetime.datetime.now(datetime.timezone.utc)
+        .isoformat(timespec="seconds")
+        .replace("+00:00", "Z")
+    )
+
+    rows = [
+        {"Field": "Captured At (UTC)", "Value": captured_at},
+        {"Field": "Tenant Name", "Value": (config or {}).get("tenant_name", "")},
+        {"Field": "Active Cloud", "Value": cloud.get("name", "")},
+        {"Field": "Subscription Scope", "Value": scope_value},
+        {"Field": "Exporter", "Value": exporter or Path(sys.argv[0]).name},
+    ]
+    return pd.DataFrame(rows)
 
 
 def _adjust_column_widths(worksheet, df) -> None:

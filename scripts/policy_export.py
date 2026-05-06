@@ -18,8 +18,9 @@ if str(_root) not in sys.path:
     sys.path.insert(0, str(_root))
 
 from sslib.auth import get_credential, quiet_azure_loggers
+from sslib.cloud import detect_cloud
 from sslib.config import get_subscription_label, load_config
-from sslib.output import make_filename, save_dataframes
+from sslib.output import make_filename, save_dataframes, snapshot_metadata
 from sslib.subscriptions import filter_subscription_ids, list_subscriptions
 
 logger = logging.getLogger(__name__)
@@ -114,13 +115,15 @@ def main() -> int:
         print("No subscriptions in scope.")
         return 1
 
+    sub_names = {s["id"]: s["name"] for s in subs}
+
     all_assignments: List[Dict[str, Any]] = []
     all_definitions: List[Dict[str, Any]] = []
     all_compliance: List[Dict[str, Any]] = []
     summary = []
 
     for sub_id in sub_ids:
-        label = get_subscription_label(config, sub_id, sub_id[:8])
+        label = get_subscription_label(config, sub_id, sub_names.get(sub_id, sub_id[:8]))
         print(f"  • {label} ({sub_id})...")
         try:
             a = list_assignments(credential, sub_id)
@@ -151,6 +154,7 @@ def main() -> int:
             )
 
     sheets = {
+        "Snapshot": snapshot_metadata(config, detect_cloud(), sub_count=len(sub_ids)),
         "Summary": pd.DataFrame(summary),
         "Assignments": pd.DataFrame(all_assignments),
         "Custom Definitions": pd.DataFrame(all_definitions),
