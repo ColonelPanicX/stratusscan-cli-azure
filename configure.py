@@ -2,7 +2,7 @@
 """
 StratusScan-Azure — interactive configuration.
 
-  • Detects active Azure cloud (Public / USGov / China)
+  • Detects active Azure cloud (Public / USGov)
   • Lists accessible subscriptions and tenants
   • Lets the user pick a default scope (all / selected)
   • Writes config.json (next to this script)

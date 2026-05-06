@@ -26,7 +26,9 @@ The `sslib/` package is a shared library. It must not emit console output. Use m
 Only the CLI scripts (`stratusscan_azure.py`, `configure.py`, exporter scripts) print to console.
 
 ### 4. Multi-cloud aware
-Public, US Government, and China clouds are detected via `sslib.cloud.detect_cloud()` (which reads `az cloud show`). Microsoft Graph endpoints differ per cloud — exporters that hit Graph must use `graph_scope_for_cloud()` for the right `.default` scope.
+Public and US Government clouds are detected via `sslib.cloud.detect_cloud()` (which reads `az cloud show`). Microsoft Graph endpoints differ per cloud — exporters that hit Graph must use `graph_scope_for_cloud()` for the right `.default` scope.
+
+**Known gap:** the ARM-side exporters (`resource_graph_export`, `rbac_export`, `policy_export`) currently hardcode the public ARM endpoint via the SDK defaults. USGov ARM routing is on the v0.2 roadmap — don't claim full USGov support until that's wired.
 
 ### 5. TUI-ready design
 The North Star is a Textual TUI (v1.0+). Design as if something will consume exporter output.
@@ -41,7 +43,7 @@ stratusscan_azure.py     # main menu — launches exporter scripts as subprocess
 configure.py             # interactive config wizard
 sslib/                   # shared library (no console output)
   auth.py                # credential chain (Cloud Shell → CLI → managed identity → SP)
-  cloud.py               # active-cloud detection (Public/USGov/China) + Graph endpoints
+  cloud.py               # active-cloud detection (Public/USGov) + Graph endpoints
   config.py              # config.json read/write
   output.py              # output paths, filename convention, multi-sheet xlsx writer
   subscriptions.py       # subscription/tenant enumeration + scope filtering
@@ -170,7 +172,7 @@ Each xlsx is multi-sheet — one sheet per Resource Graph table or Microsoft Gra
 
 | Version | Scope |
 |---|---|
-| v0.1.0-alpha (current) | Resource Graph, Entra ID, RBAC, Policy — Public + USGov + China detection |
+| v0.1.0-alpha (current) | Resource Graph, Entra ID, RBAC, Policy — Public cloud (USGov detection works for Graph; ARM endpoint plumbing pending) |
 | v0.2 | Cost Management, Defender for Cloud (full), Activity Log, Smart Scan orchestration, NSG flat-rule export, Storage encryption deep-dive |
 | v0.3 | Concurrent subscription scanning, Management Group scope, pivot-friendly sheet splits |
 | v1.0 | Textual TUI matching the AWS-side roadmap, per-service Reader-role policy bundles |

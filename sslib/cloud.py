@@ -1,9 +1,13 @@
 """
-sslib.cloud — Detect the active Azure cloud (Public / USGov / China).
+sslib.cloud — Detect the active Azure cloud (Public / USGov).
 
 The active cloud governs ARM endpoints and Microsoft Graph endpoints.
 Cloud Shell and dev boxes set this via `az cloud set`, so we read from
 the Azure CLI's reported state.
+
+USGov is recognised by Graph routing (Entra ID exporter), but the ARM-side
+exporters (resource_graph, rbac, policy) currently hardcode the public
+ARM endpoint. Wiring USGov ARM endpoints is tracked for v0.2.
 """
 
 import json
@@ -18,7 +22,6 @@ logger = logging.getLogger(__name__)
 GRAPH_ENDPOINTS = {
     "AzureCloud": "https://graph.microsoft.com",
     "AzureUSGovernment": "https://graph.microsoft.us",
-    "AzureChinaCloud": "https://microsoftgraph.chinacloudapi.cn",
 }
 
 
