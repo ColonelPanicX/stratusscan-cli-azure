@@ -91,14 +91,28 @@ def main() -> int:
     if mode_choice == "2":
         print("  Enter comma-separated subscription numbers (e.g. 1,3,5):")
         raw = input("> ").strip()
-        try:
-            indices = [int(x) - 1 for x in raw.split(",") if x.strip()]
+        indices = []
+        for tok in raw.split(","):
+            tok = tok.strip()
+            if not tok:
+                continue
+            try:
+                i = int(tok) - 1
+            except ValueError:
+                print(f"  warn: '{tok}' is not a number — skipping")
+                continue
+            if 0 <= i < len(subs):
+                indices.append(i)
+            else:
+                print(f"  warn: subscription #{tok} out of range (1..{len(subs)}) — skipping")
+
+        if indices:
             cfg["default_scope"] = {
                 "mode": "selected",
-                "selected_subscription_ids": [subs[i]["id"] for i in indices if 0 <= i < len(subs)],
+                "selected_subscription_ids": [subs[i]["id"] for i in indices],
             }
-        except ValueError:
-            print("  invalid input — keeping mode=all")
+        else:
+            print("  no valid selections — keeping mode=all")
             cfg["default_scope"] = {"mode": "all"}
     else:
         cfg["default_scope"] = {"mode": "all"}
