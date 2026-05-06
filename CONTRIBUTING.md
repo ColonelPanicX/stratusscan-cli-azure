@@ -1,4 +1,4 @@
-# Contributing to StratusScanCLI-Azure
+# Contributing to StratusScan-Azure
 
 Thanks for contributing. This document covers everything you need to get set up and submit work.
 
@@ -22,11 +22,10 @@ Thanks for contributing. This document covers everything you need to get set up 
 git clone https://github.com/ColonelPanicX/stratusscan-cli-azure.git
 cd stratusscan-cli-azure
 
-# Install runtime dependencies
-pip install azure-identity azure-mgmt-resource azure-mgmt-compute azure-mgmt-network \
-    azure-mgmt-storage azure-mgmt-keyvault azure-mgmt-authorization \
-    azure-mgmt-containerservice azure-mgmt-web azure-mgmt-sql azure-mgmt-cosmosdb \
-    pandas openpyxl python-dateutil questionary
+# Install runtime dependencies (Cloud Shell preinstalls most of these)
+pip install --user azure-identity azure-mgmt-resource azure-mgmt-resourcegraph \
+    azure-mgmt-subscription azure-mgmt-authorization azure-mgmt-policyinsights \
+    pandas openpyxl requests
 
 # Or install everything including dev tools
 pip install -e ".[dev]"
@@ -81,11 +80,11 @@ git checkout -b feature/my-thing
 Format: `<type>: <short summary in imperative mood>`
 
 ```
-feat: add Cosmos DB exporter
-fix: handle missing OS disk type on VM export
-chore: bump azure-mgmt-compute to 30.1.0
+feat: add Cost Management exporter
+fix: handle missing tenant_id on older subscription models
+chore: bump azure-mgmt-resourcegraph to 8.1.0
 docs: document Government cloud setup in README
-refactor: extract NSG rule counter to shared helper
+refactor: extract Graph pagination into sslib.graph
 ```
 
 **Types:** `feat`, `fix`, `refactor`, `chore`, `docs`, `test`, `ci`
@@ -113,96 +112,106 @@ If you're unsure whether something is ready for review, open a **Draft PR** firs
 
 ## Writing an Exporter
 
-Every script in `scripts/` follows the same structure. Copy this pattern exactly:
+Every script in `scripts/` runs independently and follows the same shape. Copy this skeleton:
 
 ```python
 #!/usr/bin/env python3
-"""StratusScanCLI-Azure — My Service Export"""
+"""StratusScan-Azure — My Service Export."""
 
+import logging
 import sys
 from pathlib import Path
+from typing import Dict, List
 
-try:
-    import utils
-except ImportError:
-    sys.path.append(str(Path(__file__).parent.parent))  # adjust depth for subdirs
-    import utils
+# Allow running as a script from /scripts/
+_root = Path(__file__).parent.parent
+if str(_root) not in sys.path:
+    sys.path.insert(0, str(_root))
 
-import pandas as pd
+from sslib.auth import get_credential, quiet_azure_loggers
+from sslib.cloud import detect_cloud
+from sslib.config import load_config
+from sslib.output import make_filename, save_dataframes
+from sslib.subscriptions import list_subscriptions, filter_subscription_ids
 
-utils.setup_logging("my-service-export")
-utils.log_script_start("my_service_export.py", "Azure My Service Export")
-
-log = utils.get_logger()
-
-
-def collect_resources(subscription_id: str) -> list:
-    client = utils.get_azure_client("myservice", subscription_id)
-    log.info("Listing resources in subscription %s", subscription_id)
-    return list(client.resource_type.list())  # Azure SDK iterators paginate automatically
+logger = logging.getLogger(__name__)
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
-    environment = utils.detect_environment()
-    if not utils.is_service_available_in_environment("myservice", environment):
-        sys.exit(0)
+def collect(credential, sub_ids: List[str]) -> Dict[str, "pd.DataFrame"]:
+    import pandas as pd
+    sheets: Dict[str, pd.DataFrame] = {}
+    summary = []
 
-    resources = collect_resources(subscription_id)
-    if not resources:
-        print("No resources found.")
-        return
+    for sub_id in sub_ids:
+        try:
+            # ... pull rows for this subscription, append to a sheet ...
+            summary.append({"Subscription": sub_id, "Rows": 0})
+        except Exception as e:
+            logger.error("Pull failed for %s: %s", sub_id, e)
+            summary.append({"Subscription": sub_id, "Rows": f"ERROR: {e}"})
 
-    rows = []
-    for r in resources:
-        rg = r.id.split("/resourceGroups/")[1].split("/")[0] if r.id else ""
-        tags = r.tags or {}
-        rows.append({
-            "Name": r.name,
-            "Resource Group": rg,
-            "Location": r.location,
-            # ... resource-specific fields ...
-            "Tags": "; ".join(f"{k}={v}" for k, v in tags.items()),
-        })
+    sheets = {"Summary": pd.DataFrame(summary), **sheets}
+    return sheets
 
-    df = pd.DataFrame(rows)
-    filename = utils.create_export_filename(subscription_name, "my-service", "all")
-    utils.save_dataframe_to_excel(df, filename, sheet_name="My Service")
-    print(f"Exported {len(rows)} resource(s) → {filename}")
-    log.info("Export complete: %d resources", len(rows))
+
+def main() -> int:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    quiet_azure_loggers()
+
+    try:
+        import pandas as pd  # noqa: F401
+    except ImportError:
+        print("ERROR: pandas is required. Install with: pip install --user pandas openpyxl")
+        return 1
+
+    config = load_config()
+    credential = get_credential()
+
+    subs = list_subscriptions(credential)
+    sub_ids = filter_subscription_ids(subs, config)
+    if not sub_ids:
+        print("No subscriptions in scope. Run configure.py to adjust.")
+        return 1
+
+    sheets = collect(credential, sub_ids)
+
+    tenant = config.get("tenant_name", "AZURE-TENANT")
+    filename = make_filename(tenant, "my-service", "all")
+    return 0 if save_dataframes(sheets, filename) else 1
 
 
 if __name__ == "__main__":
-    cfg = utils.get_config()
-    sub_id = cfg.get("default_subscription_id", "")
-    sub_name = utils.get_subscription_name(sub_id)
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    sys.exit(main())
 ```
 
 ### Key rules for exporters
 
-- **Never call `azure-mgmt-*` clients directly.** Always use `utils.get_azure_client(service_name, subscription_id)`.
-- **Always call `utils.setup_logging()` at the top.** Before any logic, before any API calls.
-- **Always guard with `is_service_available_in_environment()`** — some services aren't available in Azure US Government.
-- **No `print()` in `utils.py`.** Only exporter scripts and CLI scripts print to console. `utils.py` returns structured data only.
-- **Azure `.list()` methods return lazy iterators** — wrap in `list()` to materialize, or iterate directly for large sets.
-- **Tags always go last** in the column order.
-- **Script filenames:** `lowercase_underscored.py`
+- **Use `sslib.auth.get_credential()`** for credentials — never instantiate Azure credential classes directly. The chain is Cloud-Shell-optimized.
+- **Call `quiet_azure_loggers()` at the top of `main()`.** Otherwise the Azure SDK floods the terminal with INFO-level HTTP traces.
+- **Multi-cloud-safe** — for Microsoft Graph access, use `graph_scope_for_cloud()` to pick the right `.default` scope.
+- **No `print()` in `sslib/`.** Library functions return structured data and use module-scoped `logging`. Only exporter scripts and CLI scripts print to console.
+- **Output via `make_filename()` + `save_dataframes()`** — never hardcode paths or filenames.
+- **Always include a `Summary` sheet** as the first entry in the sheets dict — row counts per logical pull. Per-subscription errors record as a Summary row rather than crashing the whole exporter.
+- **Tags column always last** in row schemas.
+- **Azure `.list()` returns lazy iterators** — wrap in `list()` to materialize.
+- **Filename convention:** `lowercase_underscored.py`.
 
 ### Where to put it
 
-| Service category | Directory |
-|---|---|
-| VMs, disks, AKS, App Service, Functions | `scripts/compute/` |
-| VNets, subnets, NSGs, firewalls, load balancers | `scripts/network/` |
-| Storage accounts, blobs | `scripts/storage/` |
-| SQL, Cosmos DB, other databases | `scripts/databases/` |
-| Key Vault, RBAC, Defender, Policy | `scripts/security/` |
-| Subscription-level, resource groups | `scripts/` (root) |
+All exporters live flat under `scripts/` — they're tenant- or subscription-wide pulls, so categorizing by service type adds noise without value at this scale. If a future exporter genuinely needs subdirectory structure, propose it in the PR.
 
-After adding the script, register it in `azurescan.py` under the appropriate tier (`TIER1_EXPORTERS` or `TIER2_EXPORTERS`).
+After adding the script, register it in `stratusscan_azure.py`'s `MENU` so it appears in the launcher and in "Run all":
+
+```python
+MENU = {
+    "0": ("Configure StratusScan-Azure", _root / "configure.py"),
+    "1": ("Resource Graph (full inventory)", SCRIPTS_DIR / "resource_graph_export.py"),
+    # ...
+    "N": ("My Service", SCRIPTS_DIR / "my_service_export.py"),  # ← add here
+}
+```
+
+Update `tests/test_smoke.py`'s `EXPORTER_MODULES` list so the import-smoke test covers it.
 
 ---
 
@@ -225,14 +234,14 @@ No comments explaining what code does — name things well instead. A comment is
 
 These are non-negotiable and apply to all contributions:
 
-**CloudShell-first** — the tool must work in a fresh Azure Cloud Shell session with no extra setup beyond `pip install`. If a proposed change breaks this, it will be rejected.
+**Cloud Shell-first** — the tool must work in a fresh Azure Cloud Shell session with no extra setup beyond `pip install`. If a proposed change breaks this, it will be rejected.
 
-**Minimal dependencies** — stick to `azure-identity`, `azure-mgmt-*` (per service), `pandas`, `openpyxl`, `python-dateutil`, `questionary`. No heavy frameworks. No lockfiles. No build tools.
+**Minimal dependencies** — stick to `azure-identity`, `azure-mgmt-*` (per service), `pandas`, `openpyxl`, `requests`. No heavy frameworks. No lockfiles.
 
-**Subprocess architecture** — `azurescan.py` launches exporters as subprocesses. It never calls Azure APIs directly. Don't break this boundary.
+**Subprocess architecture** — `stratusscan_azure.py` launches exporters as subprocesses. It never calls Azure APIs directly. Don't break this boundary.
 
-**CI mode** — every interactive prompt must check `utils.is_auto_run()` before displaying. `AZURESCAN_AUTO_RUN=1` must bypass all prompts.
+**No print() in `sslib/`** — `sslib/` is a shared package. Use module-scoped `logging` and return structured data. Only exporter scripts and CLI scripts print to console.
 
-**No print() in utils.py** — `utils.py` is a shared library. Functions return structured results. Only CLI scripts print.
+**Multi-cloud aware** — anything that hits Microsoft Graph must use `graph_scope_for_cloud()` to choose the right scope. Anything cloud-specific must read `detect_cloud()` rather than assume Public.
 
 When in doubt about any of these, open an issue and discuss before writing code.
