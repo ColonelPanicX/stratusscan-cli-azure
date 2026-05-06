@@ -55,6 +55,5 @@ def get_graph_token(credential, scope: str = "https://graph.microsoft.com/.defau
     Return a bearer token for Microsoft Graph.
 
     For USGov use scope='https://graph.microsoft.us/.default'.
-    For China use scope='https://microsoftgraph.chinacloudapi.cn/.default'.
     """
     return credential.get_token(scope).token

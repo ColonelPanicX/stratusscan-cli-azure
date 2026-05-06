@@ -12,7 +12,7 @@
     "management_group_id": null
   },
   "azure_cloud": "AzureCloud",
-  "__azure_cloud_options": "AzureCloud | AzureUSGovernment | AzureChinaCloud",
+  "__azure_cloud_options": "AzureCloud | AzureUSGovernment",
   "output_preferences": {
     "use_clouddrive_in_cloud_shell": true,
     "compress_after_export": false

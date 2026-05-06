@@ -48,8 +48,10 @@ cover what Resource Graph doesn't reach:
 **Multi-subscription:** All exporters discover every accessible subscription and
 fan out automatically (filtered by `default_scope` in `config.json`).
 
-**Multi-cloud:** Public, US Gov, and China clouds are detected via `az cloud show`
-and Microsoft Graph endpoints are routed accordingly.
+**Multi-cloud:** Public and US Gov clouds are detected via `az cloud show`.
+Microsoft Graph endpoints are routed correctly today; ARM-side exporters
+(Resource Graph, RBAC, Policy) currently hardcode the public ARM endpoint
+— full USGov ARM support is planned for v0.2.
 
 ---
 
@@ -146,7 +148,7 @@ StratusScan-Azure/
 ├── configure.py               # interactive setup
 ├── sslib/
 │   ├── auth.py                # credential chain
-│   ├── cloud.py               # Public/USGov/China detection + Graph endpoints
+│   ├── cloud.py               # Public/USGov detection + Graph endpoints
 │   ├── config.py              # config.json read/write
 │   ├── output.py              # output paths + xlsx writer (Cloud Shell aware)
 │   └── subscriptions.py       # subscription enumeration + scope filtering
