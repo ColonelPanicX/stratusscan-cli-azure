@@ -9,13 +9,24 @@ each Resource Graph table queried. This single script covers the bulk of
 policy_export for things outside the ARM data plane.
 
 Tables queried:
-    - Resources              (all ARM resources: VMs, storage, networks, KVs, etc.)
-    - ResourceContainers     (subscriptions, resource groups, management groups)
-    - AdvisorResources       (Azure Advisor recommendations)
-    - SecurityResources      (Defender for Cloud assessments)
-    - PolicyResources        (Policy assignments + compliance state)
-    - HealthResources        (Service health events)
-    - AuthorizationResources (RBAC role assignments — also pulled deeper by rbac_export)
+    - Resources                  (all ARM resources: VMs, disks, networks, KVs, etc.)
+    - ResourceContainers         (subscriptions, resource groups, management groups)
+    - AdvisorResources           (Azure Advisor recommendations)
+    - SecurityResources          (Defender for Cloud assessments)
+    - PolicyResources            (Policy assignments + compliance state)
+    - HealthResources            (Service health events)
+    - AuthorizationResources     (RBAC role assignments — also pulled deeper by rbac_export)
+    - MaintenanceResources       (planned-maintenance updates)
+    - PatchAssessmentResources   (pending OS patches per VM)
+
+Dedicated sheets per resource type: Virtual Machines, Disks, AKS Clusters,
+App Services, Network Interfaces, Public IPs, Network Security Groups,
+Load Balancers, Subnets, VNet Peerings, SQL Databases, Cosmos DB Accounts,
+Storage Accounts, Storage Containers, Key Vaults, Resource Locks.
+
+A "Coverage Audit" sheet at the end groups every type present in the tenant
+and flags which ones only land in "All Resources" — i.e. where adding a
+dedicated sheet would yield richer projections.
 """
 
 import logging
@@ -93,6 +104,138 @@ DEFAULT_QUERIES: List[Dict[str, str]] = [
         ),
     },
     {
+        "sheet": "Disks",
+        "table": "Resources",
+        "query": (
+            "Resources | where type =~ 'microsoft.compute/disks' "
+            "| project subscriptionId, resourceGroup, name, location, "
+            "skuName=tostring(sku.name), skuTier=tostring(sku.tier), "
+            "diskSizeGB=toint(properties.diskSizeGB), "
+            "diskState=tostring(properties.diskState), "
+            "osType=tostring(properties.osType), "
+            "createOption=tostring(properties.creationData.createOption), "
+            "encryptionType=tostring(properties.encryption.type), "
+            "diskEncryptionSetId=tostring(properties.encryption.diskEncryptionSetId), "
+            "networkAccessPolicy=tostring(properties.networkAccessPolicy), "
+            "publicNetworkAccess=tostring(properties.publicNetworkAccess), "
+            "managedBy=tostring(managedBy), "
+            "tags=tostring(tags), id"
+        ),
+    },
+    {
+        "sheet": "AKS Clusters",
+        "table": "Resources",
+        "query": (
+            "Resources | where type =~ 'microsoft.containerservice/managedclusters' "
+            "| project subscriptionId, resourceGroup, name, location, "
+            "kubernetesVersion=tostring(properties.kubernetesVersion), "
+            "currentKubernetesVersion=tostring(properties.currentKubernetesVersion), "
+            "dnsPrefix=tostring(properties.dnsPrefix), "
+            "fqdn=tostring(properties.fqdn), "
+            "nodeResourceGroup=tostring(properties.nodeResourceGroup), "
+            "enableRBAC=tobool(properties.enableRBAC), "
+            "networkPlugin=tostring(properties.networkProfile.networkPlugin), "
+            "networkPolicy=tostring(properties.networkProfile.networkPolicy), "
+            "serviceCidr=tostring(properties.networkProfile.serviceCidr), "
+            "authorizedIpCount=array_length(properties.apiServerAccessProfile.authorizedIPRanges), "
+            "privateCluster=tobool(properties.apiServerAccessProfile.enablePrivateCluster), "
+            "nodePoolCount=array_length(properties.agentPoolProfiles), "
+            "powerState=tostring(properties.powerState.code), "
+            "provisioningState=tostring(properties.provisioningState), "
+            "identityType=tostring(identity.type), "
+            "tags=tostring(tags), id"
+        ),
+    },
+    {
+        "sheet": "App Services",
+        "table": "Resources",
+        "query": (
+            "Resources | where type =~ 'microsoft.web/sites' "
+            "| project subscriptionId, resourceGroup, name, location, "
+            "kind, "
+            "state=tostring(properties.state), "
+            "enabled=tobool(properties.enabled), "
+            "httpsOnly=tobool(properties.httpsOnly), "
+            "clientCertEnabled=tobool(properties.clientCertEnabled), "
+            "publicNetworkAccess=tostring(properties.publicNetworkAccess), "
+            "serverFarmId=tostring(properties.serverFarmId), "
+            "defaultHostName=tostring(properties.defaultHostName), "
+            "minTlsVersion=tostring(properties.siteConfig.minTlsVersion), "
+            "ftpsState=tostring(properties.siteConfig.ftpsState), "
+            "linuxFxVersion=tostring(properties.siteConfig.linuxFxVersion), "
+            "netFrameworkVersion=tostring(properties.siteConfig.netFrameworkVersion), "
+            "pythonVersion=tostring(properties.siteConfig.pythonVersion), "
+            "nodeVersion=tostring(properties.siteConfig.nodeVersion), "
+            "identityType=tostring(identity.type), "
+            "tags=tostring(tags), id"
+        ),
+    },
+    {
+        "sheet": "Network Interfaces",
+        "table": "Resources",
+        "query": (
+            "Resources | where type =~ 'microsoft.network/networkinterfaces' "
+            "| extend ipConfig = properties.ipConfigurations[0].properties "
+            "| project subscriptionId, resourceGroup, name, location, "
+            "privateIp=tostring(ipConfig.privateIPAddress), "
+            "privateIpAllocation=tostring(ipConfig.privateIPAllocationMethod), "
+            "subnetId=tostring(ipConfig.subnet.id), "
+            "publicIpId=tostring(ipConfig.publicIPAddress.id), "
+            "nsgId=tostring(properties.networkSecurityGroup.id), "
+            "macAddress=tostring(properties.macAddress), "
+            "enableAcceleratedNetworking=tobool(properties.enableAcceleratedNetworking), "
+            "enableIPForwarding=tobool(properties.enableIPForwarding), "
+            "vmId=tostring(properties.virtualMachine.id), "
+            "tags=tostring(tags), id"
+        ),
+    },
+    {
+        "sheet": "Public IPs",
+        "table": "Resources",
+        "query": (
+            "Resources | where type =~ 'microsoft.network/publicipaddresses' "
+            "| project subscriptionId, resourceGroup, name, location, "
+            "skuName=tostring(sku.name), skuTier=tostring(sku.tier), "
+            "ipAddress=tostring(properties.ipAddress), "
+            "allocationMethod=tostring(properties.publicIPAllocationMethod), "
+            "addressVersion=tostring(properties.publicIPAddressVersion), "
+            "associatedTo=tostring(properties.ipConfiguration.id), "
+            "fqdn=tostring(properties.dnsSettings.fqdn), "
+            "idleTimeoutInMinutes=toint(properties.idleTimeoutInMinutes), "
+            "tags=tostring(tags), id"
+        ),
+    },
+    {
+        "sheet": "Network Security Groups",
+        "table": "Resources",
+        "query": (
+            "Resources | where type =~ 'microsoft.network/networksecuritygroups' "
+            "| project subscriptionId, resourceGroup, name, location, "
+            "customRuleCount=array_length(properties.securityRules), "
+            "defaultRuleCount=array_length(properties.defaultSecurityRules), "
+            "associatedSubnetCount=array_length(properties.subnets), "
+            "associatedNicCount=array_length(properties.networkInterfaces), "
+            "flowLogCount=array_length(properties.flowLogs), "
+            "tags=tostring(tags), id"
+        ),
+    },
+    {
+        "sheet": "Load Balancers",
+        "table": "Resources",
+        "query": (
+            "Resources | where type =~ 'microsoft.network/loadbalancers' "
+            "| project subscriptionId, resourceGroup, name, location, "
+            "skuName=tostring(sku.name), skuTier=tostring(sku.tier), "
+            "frontendIpCount=array_length(properties.frontendIPConfigurations), "
+            "backendPoolCount=array_length(properties.backendAddressPools), "
+            "loadBalancingRuleCount=array_length(properties.loadBalancingRules), "
+            "inboundNatRuleCount=array_length(properties.inboundNatRules), "
+            "outboundRuleCount=array_length(properties.outboundRules), "
+            "probeCount=array_length(properties.probes), "
+            "tags=tostring(tags), id"
+        ),
+    },
+    {
         "sheet": "Subnets",
         "table": "Resources",
         "query": (
@@ -144,6 +287,49 @@ DEFAULT_QUERIES: List[Dict[str, str]] = [
         ),
     },
     {
+        "sheet": "Cosmos DB Accounts",
+        "table": "Resources",
+        "query": (
+            "Resources | where type =~ 'microsoft.documentdb/databaseaccounts' "
+            "| project subscriptionId, resourceGroup, name, location, "
+            "kind, "
+            "offerType=tostring(properties.databaseAccountOfferType), "
+            "consistencyLevel=tostring(properties.consistencyPolicy.defaultConsistencyLevel), "
+            "enableAutomaticFailover=tobool(properties.enableAutomaticFailover), "
+            "enableMultipleWriteLocations=tobool(properties.enableMultipleWriteLocations), "
+            "isVirtualNetworkFilterEnabled=tobool(properties.isVirtualNetworkFilterEnabled), "
+            "publicNetworkAccess=tostring(properties.publicNetworkAccess), "
+            "minimalTlsVersion=tostring(properties.minimalTlsVersion), "
+            "disableLocalAuth=tobool(properties.disableLocalAuth), "
+            "locationCount=array_length(properties.locations), "
+            "capabilities=tostring(properties.capabilities), "
+            "tags=tostring(tags), id"
+        ),
+    },
+    {
+        "sheet": "Storage Accounts",
+        "table": "Resources",
+        "query": (
+            "Resources | where type =~ 'microsoft.storage/storageaccounts' "
+            "| project subscriptionId, resourceGroup, name, location, "
+            "kind, skuName=tostring(sku.name), skuTier=tostring(sku.tier), "
+            "accessTier=tostring(properties.accessTier), "
+            "minimumTlsVersion=tostring(properties.minimumTlsVersion), "
+            "supportsHttpsTrafficOnly=tobool(properties.supportsHttpsTrafficOnly), "
+            "allowBlobPublicAccess=tobool(properties.allowBlobPublicAccess), "
+            "allowSharedKeyAccess=tobool(properties.allowSharedKeyAccess), "
+            "publicNetworkAccess=tostring(properties.publicNetworkAccess), "
+            "networkDefaultAction=tostring(properties.networkAcls.defaultAction), "
+            "networkBypass=tostring(properties.networkAcls.bypass), "
+            "isHnsEnabled=tobool(properties.isHnsEnabled), "
+            "encryptionKeySource=tostring(properties.encryption.keySource), "
+            "requireInfrastructureEncryption=tobool(properties.encryption.requireInfrastructureEncryption), "
+            "primaryLocation=tostring(properties.primaryLocation), "
+            "statusOfPrimary=tostring(properties.statusOfPrimary), "
+            "tags=tostring(tags), id"
+        ),
+    },
+    {
         "sheet": "Storage Containers",
         "table": "Resources",
         "query": (
@@ -156,6 +342,27 @@ DEFAULT_QUERIES: List[Dict[str, str]] = [
             "hasLegalHold=tobool(properties.hasLegalHold), "
             "leaseStatus=tostring(properties.leaseStatus), "
             "leaseState=tostring(properties.leaseState), id"
+        ),
+    },
+    {
+        "sheet": "Key Vaults",
+        "table": "Resources",
+        "query": (
+            "Resources | where type =~ 'microsoft.keyvault/vaults' "
+            "| project subscriptionId, resourceGroup, name, location, "
+            "skuFamily=tostring(properties.sku.family), "
+            "skuName=tostring(properties.sku.name), "
+            "enabledForDeployment=tobool(properties.enabledForDeployment), "
+            "enabledForDiskEncryption=tobool(properties.enabledForDiskEncryption), "
+            "enabledForTemplateDeployment=tobool(properties.enabledForTemplateDeployment), "
+            "enableRbacAuthorization=tobool(properties.enableRbacAuthorization), "
+            "enableSoftDelete=tobool(properties.enableSoftDelete), "
+            "softDeleteRetentionInDays=toint(properties.softDeleteRetentionInDays), "
+            "enablePurgeProtection=tobool(properties.enablePurgeProtection), "
+            "publicNetworkAccess=tostring(properties.publicNetworkAccess), "
+            "networkDefaultAction=tostring(properties.networkAcls.defaultAction), "
+            "accessPolicyCount=array_length(properties.accessPolicies), "
+            "tags=tostring(tags), id"
         ),
     },
     {
@@ -232,7 +439,43 @@ DEFAULT_QUERIES: List[Dict[str, str]] = [
             "scope=tostring(properties.scope), id"
         ),
     },
+    {
+        "sheet": "Maintenance",
+        "table": "MaintenanceResources",
+        "query": (
+            "MaintenanceResources "
+            "| project subscriptionId, resourceGroup, type, name, location, id"
+        ),
+    },
+    {
+        "sheet": "Patch Assessment",
+        "table": "PatchAssessmentResources",
+        "query": (
+            "PatchAssessmentResources "
+            "| project subscriptionId, resourceGroup, type, name, location, id"
+        ),
+    },
 ]
+
+# Resource types we project into a dedicated sheet beyond "All Resources".
+# Used by the Coverage Audit sheet to flag types that only land in "All Resources".
+DEDICATED_TYPES = {
+    "microsoft.compute/virtualmachines",
+    "microsoft.compute/disks",
+    "microsoft.containerservice/managedclusters",
+    "microsoft.web/sites",
+    "microsoft.network/networkinterfaces",
+    "microsoft.network/publicipaddresses",
+    "microsoft.network/networksecuritygroups",
+    "microsoft.network/loadbalancers",
+    "microsoft.network/virtualnetworks",
+    "microsoft.sql/servers/databases",
+    "microsoft.documentdb/databaseaccounts",
+    "microsoft.storage/storageaccounts",
+    "microsoft.storage/storageaccounts/blobservices/containers",
+    "microsoft.keyvault/vaults",
+    "microsoft.authorization/locks",
+}
 
 
 def run_query(
@@ -280,6 +523,28 @@ def run_query(
     return rows
 
 
+def _build_coverage_audit(all_resources_df, pd) -> "pd.DataFrame":
+    """
+    Build the Coverage Audit sheet from the All Resources frame.
+
+    For every resource type present in the tenant, report row count and
+    whether resource_graph_export expands it into a dedicated sheet. Types
+    not in DEDICATED_TYPES land only in "All Resources" — those rows tell
+    you where to add coverage next.
+    """
+    if all_resources_df is None or all_resources_df.empty or "type" not in all_resources_df.columns:
+        return pd.DataFrame(columns=["type", "count", "has_dedicated_sheet"])
+
+    counts = (
+        all_resources_df["type"].astype(str).str.lower().value_counts().reset_index()
+    )
+    counts.columns = ["type", "count"]
+    counts["has_dedicated_sheet"] = counts["type"].isin(DEDICATED_TYPES).map(
+        {True: "Yes", False: "No"}
+    )
+    return counts
+
+
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     quiet_azure_loggers()
@@ -325,10 +590,13 @@ def main() -> int:
                 {"Sheet": sheet, "Table": q["table"], "Rows": f"ERROR: {e}"}
             )
 
+    audit_df = _build_coverage_audit(sheets.get("All Resources"), pd)
+
     sheets = {
         "Snapshot": snapshot_metadata(config, detect_cloud(), sub_count=len(sub_ids)),
         "Summary": pd.DataFrame(summary_rows),
         **sheets,
+        "Coverage Audit": audit_df,
     }
 
     filename = make_filename(resolve_scope_label(config, sub_ids), "resource-graph", "all")
