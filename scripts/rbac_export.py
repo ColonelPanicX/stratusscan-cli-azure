@@ -21,7 +21,7 @@ if str(_root) not in sys.path:
     sys.path.insert(0, str(_root))
 
 from sslib.auth import get_credential, quiet_azure_loggers
-from sslib.cloud import detect_cloud
+from sslib.cloud import arm_client_kwargs, detect_cloud
 from sslib.config import get_subscription_label, load_config, resolve_scope_label
 from sslib.output import make_filename, save_dataframes, snapshot_metadata
 from sslib.subscriptions import filter_subscription_ids, list_subscriptions
@@ -35,7 +35,7 @@ def export_subscription(credential, subscription_id: str) -> Dict[str, List[Dict
     """
     from azure.mgmt.authorization import AuthorizationManagementClient
 
-    client = AuthorizationManagementClient(credential, subscription_id)
+    client = AuthorizationManagementClient(credential, subscription_id, **arm_client_kwargs())
     scope = f"/subscriptions/{subscription_id}"
 
     role_defs_by_id: Dict[str, Dict[str, Any]] = {}

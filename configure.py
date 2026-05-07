@@ -19,7 +19,7 @@ if str(_root) not in sys.path:
     sys.path.insert(0, str(_root))
 
 from sslib.auth import get_credential
-from sslib.cloud import detect_cloud
+from sslib.cloud import arm_scope_for_cloud, detect_cloud
 from sslib.config import load_config, save_config
 from sslib.subscriptions import list_subscriptions, list_tenants
 
@@ -42,7 +42,7 @@ def main() -> int:
     try:
         credential = get_credential()
         # Force a token fetch so failures surface here, not deeper in the workflow.
-        credential.get_token("https://management.azure.com/.default")
+        credential.get_token(arm_scope_for_cloud())
     except Exception as e:
         print(f"\n  ERROR: could not authenticate ({e})")
         print("  In Cloud Shell this should be automatic. On a dev box, run: az login")

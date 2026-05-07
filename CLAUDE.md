@@ -26,9 +26,10 @@ The `sslib/` package is a shared library. It must not emit console output. Use m
 Only the CLI scripts (`stratusscan_azure.py`, `configure.py`, exporter scripts) print to console.
 
 ### 4. Multi-cloud aware
-Public and US Government clouds are detected via `sslib.cloud.detect_cloud()` (which reads `az cloud show`). Microsoft Graph endpoints differ per cloud — exporters that hit Graph must use `graph_scope_for_cloud()` for the right `.default` scope.
+Public and US Government clouds are detected via `sslib.cloud.detect_cloud()` (which reads `az cloud show`). Microsoft Graph and ARM endpoints both differ per cloud:
 
-**Known gap:** the ARM-side exporters (`resource_graph_export`, `rbac_export`, `policy_export`) currently hardcode the public ARM endpoint via the SDK defaults. USGov ARM routing is on the v0.2 roadmap — don't claim full USGov support until that's wired.
+- Graph exporters use `graph_scope_for_cloud()` for the right `.default` scope.
+- ARM clients (`SubscriptionClient`, `ResourceGraphClient`, `AuthorizationManagementClient`, `PolicyClient`, `PolicyInsightsClient`) must be constructed with `**arm_client_kwargs()` so they route to the active cloud's ARM endpoint and request the matching token scope.
 
 ### 5. TUI-ready design
 The North Star is a Textual TUI (v1.0+). Design as if something will consume exporter output.
@@ -132,7 +133,10 @@ Rules:
 | `get_graph_token(cred, scope)` | `auth` | Bearer token for Microsoft Graph |
 | `quiet_azure_loggers()` | `auth` | Silence `azure.*` / `msal` INFO chatter |
 | `detect_cloud()` | `cloud` | `{name, graph_endpoint}` from `az cloud show` |
-| `graph_scope_for_cloud()` | `cloud` | `.default` scope URL for active cloud |
+| `graph_scope_for_cloud()` | `cloud` | Graph `.default` scope for active cloud |
+| `arm_endpoint_for_cloud()` | `cloud` | ARM endpoint URL for active cloud |
+| `arm_scope_for_cloud()` | `cloud` | ARM `.default` scope for active cloud |
+| `arm_client_kwargs()` | `cloud` | `base_url` + `credential_scopes` to splat into any `azure-mgmt-*` client |
 | `is_government_cloud()` | `cloud` | Gov-cloud check |
 | `load_config()` / `save_config()` | `config` | Read / atomic-write `config.json` |
 | `get_subscription_label(cfg, sub_id, fallback)` | `config` | Friendly-name lookup |
@@ -172,7 +176,7 @@ Each xlsx is multi-sheet — one sheet per Resource Graph table or Microsoft Gra
 
 | Version | Scope |
 |---|---|
-| v0.1.0-alpha (current) | Resource Graph, Entra ID, RBAC, Policy — Public cloud (USGov detection works for Graph; ARM endpoint plumbing pending) |
+| v0.1.0-alpha (current) | Resource Graph, Entra ID, RBAC, Policy — Public cloud and US Gov cloud (Graph + ARM both routed) |
 | v0.2 | Cost Management, Defender for Cloud (full), Activity Log, Smart Scan orchestration, NSG flat-rule export, Storage encryption deep-dive |
 | v0.3 | Concurrent subscription scanning, Management Group scope, pivot-friendly sheet splits |
 | v1.0 | Textual TUI matching the AWS-side roadmap, per-service Reader-role policy bundles |

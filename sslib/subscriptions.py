@@ -7,6 +7,8 @@ from typing import Dict, List
 
 from azure.mgmt.subscription import SubscriptionClient
 
+from sslib.cloud import arm_client_kwargs
+
 logger = logging.getLogger(__name__)
 
 
@@ -17,7 +19,7 @@ def list_subscriptions(credential) -> List[Dict[str, str]]:
     Returns:
         list of dicts: [{id, name, tenant_id, state}]
     """
-    client = SubscriptionClient(credential)
+    client = SubscriptionClient(credential, **arm_client_kwargs())
     subs = []
     for sub in client.subscriptions.list():
         # tenant_id is on Tenant, not Subscription, in azure-mgmt-subscription;
@@ -39,7 +41,7 @@ def list_tenants(credential) -> List[Dict[str, str]]:
     """
     List tenants the signed-in identity has access to.
     """
-    client = SubscriptionClient(credential)
+    client = SubscriptionClient(credential, **arm_client_kwargs())
     tenants = []
     for t in client.tenants.list():
         tenants.append(

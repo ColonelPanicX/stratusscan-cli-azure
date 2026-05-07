@@ -47,9 +47,8 @@ cover what Resource Graph doesn't reach:
 fan out automatically (filtered by `default_scope` in `config.json`).
 
 **Multi-cloud:** Public and US Gov clouds are detected via `az cloud show`.
-Microsoft Graph endpoints are routed correctly today; ARM-side exporters
-(Resource Graph, RBAC, Policy) currently hardcode the public ARM endpoint
-— full USGov ARM support is planned for v0.2.
+Both Microsoft Graph and ARM endpoints route to the active cloud — Resource
+Graph, RBAC, Policy, and Entra ID exporters all work in USGov.
 
 ---
 

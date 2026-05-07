@@ -18,7 +18,7 @@ if str(_root) not in sys.path:
     sys.path.insert(0, str(_root))
 
 from sslib.auth import get_credential, quiet_azure_loggers
-from sslib.cloud import detect_cloud
+from sslib.cloud import arm_client_kwargs, detect_cloud
 from sslib.config import get_subscription_label, load_config, resolve_scope_label
 from sslib.output import make_filename, save_dataframes, snapshot_metadata
 from sslib.subscriptions import filter_subscription_ids, list_subscriptions
@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 def list_assignments(credential, subscription_id: str) -> List[Dict[str, Any]]:
     from azure.mgmt.resource.policy import PolicyClient
 
-    client = PolicyClient(credential, subscription_id)
+    client = PolicyClient(credential, subscription_id, **arm_client_kwargs())
     rows = []
     for a in client.policy_assignments.list():
         rows.append(
@@ -50,7 +50,7 @@ def list_assignments(credential, subscription_id: str) -> List[Dict[str, Any]]:
 def list_custom_definitions(credential, subscription_id: str) -> List[Dict[str, Any]]:
     from azure.mgmt.resource.policy import PolicyClient
 
-    client = PolicyClient(credential, subscription_id)
+    client = PolicyClient(credential, subscription_id, **arm_client_kwargs())
     rows = []
     for d in client.policy_definitions.list():
         if d.policy_type == "Custom":
@@ -78,7 +78,7 @@ def list_compliance_summary(credential, subscription_id: str) -> List[Dict[str, 
     """
     from azure.mgmt.policyinsights import PolicyInsightsClient
 
-    client = PolicyInsightsClient(credential, subscription_id)
+    client = PolicyInsightsClient(credential, subscription_id, **arm_client_kwargs())
     rows: List[Dict[str, Any]] = []
     result = client.policy_states.summarize_for_subscription(subscription_id=subscription_id)
     for sub_summary in (result.value or []):

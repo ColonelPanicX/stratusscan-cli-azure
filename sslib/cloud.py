@@ -4,24 +4,24 @@ sslib.cloud — Detect the active Azure cloud (Public / USGov).
 The active cloud governs ARM endpoints and Microsoft Graph endpoints.
 Cloud Shell and dev boxes set this via `az cloud set`, so we read from
 the Azure CLI's reported state.
-
-USGov is recognised by Graph routing (Entra ID exporter), but the ARM-side
-exporters (resource_graph, rbac, policy) currently hardcode the public
-ARM endpoint. Wiring USGov ARM endpoints is tracked for v0.2.
 """
 
 import json
 import logging
 import subprocess
 from functools import lru_cache
-from typing import Dict, Optional
+from typing import Dict, List
 
 logger = logging.getLogger(__name__)
 
-# Microsoft Graph endpoints by cloud — used for Entra ID exports
 GRAPH_ENDPOINTS = {
     "AzureCloud": "https://graph.microsoft.com",
     "AzureUSGovernment": "https://graph.microsoft.us",
+}
+
+ARM_ENDPOINTS = {
+    "AzureCloud": "https://management.azure.com",
+    "AzureUSGovernment": "https://management.usgovcloudapi.net",
 }
 
 
@@ -30,8 +30,8 @@ def detect_cloud() -> Dict[str, str]:
     """
     Return the active cloud info from `az cloud show`.
 
-    Returns a dict with keys: name, graph_endpoint. Falls back to AzureCloud
-    if `az` is not installed or the call fails.
+    Returns a dict with keys: name, graph_endpoint, arm_endpoint. Falls back
+    to AzureCloud if `az` is not installed or the call fails.
 
     Cached for the process lifetime — subprocess invocation is expensive and
     the active cloud doesn't change without restarting the session.
@@ -56,6 +56,7 @@ def detect_cloud() -> Dict[str, str]:
     return {
         "name": name,
         "graph_endpoint": GRAPH_ENDPOINTS.get(name, GRAPH_ENDPOINTS["AzureCloud"]),
+        "arm_endpoint": ARM_ENDPOINTS.get(name, ARM_ENDPOINTS["AzureCloud"]),
     }
 
 
@@ -64,6 +65,27 @@ def is_government_cloud() -> bool:
 
 
 def graph_scope_for_cloud() -> str:
-    """Return the Microsoft Graph .default scope for the active cloud."""
-    endpoint = detect_cloud()["graph_endpoint"]
-    return f"{endpoint}/.default"
+    """Microsoft Graph .default scope for the active cloud."""
+    return f"{detect_cloud()['graph_endpoint']}/.default"
+
+
+def arm_endpoint_for_cloud() -> str:
+    """ARM management endpoint for the active cloud."""
+    return detect_cloud()["arm_endpoint"]
+
+
+def arm_scope_for_cloud() -> str:
+    """ARM .default scope for the active cloud."""
+    return f"{detect_cloud()['arm_endpoint']}/.default"
+
+
+def arm_client_kwargs() -> Dict[str, object]:
+    """
+    Keyword args to splat into any azure-mgmt-* client constructor so it
+    routes to the active cloud's ARM endpoint.
+
+    Example:
+        client = ResourceGraphClient(credential, **arm_client_kwargs())
+    """
+    arm = arm_endpoint_for_cloud()
+    return {"base_url": arm, "credential_scopes": [f"{arm}/.default"]}
