@@ -19,10 +19,26 @@ Tables queried:
     - MaintenanceResources       (planned-maintenance updates)
     - PatchAssessmentResources   (pending OS patches per VM)
 
-Dedicated sheets per resource type: Virtual Machines, Disks, AKS Clusters,
-App Services, Network Interfaces, Public IPs, Network Security Groups,
-Load Balancers, Subnets, VNet Peerings, SQL Databases, Cosmos DB Accounts,
-Storage Accounts, Storage Containers, Key Vaults, Resource Locks.
+Dedicated sheets per resource type:
+
+  Compute / cost drivers:
+    Virtual Machines, VM Scale Sets, Disks, Snapshots, AKS Clusters,
+    AKS Node Pools, App Services, App Service Plans, Container Apps
+    Environments, Container Apps, Container Registries
+
+  Network / topology:
+    Network Interfaces, Public IPs, Network Security Groups, Load Balancers,
+    LB Backend Members, Application Gateways, VNet Gateways, VPN Connections,
+    Local Network Gateways, ExpressRoute Circuits, Virtual WANs, Virtual Hubs,
+    Azure Firewalls, Bastion Hosts, NAT Gateways, Route Tables, Routes,
+    Private Endpoints, DNS Zones, Private DNS VNet Links, Subnets, VNet Peerings
+
+  Data:
+    SQL Databases, Cosmos DB Accounts, Storage Accounts, Storage Containers,
+    Key Vaults
+
+  Governance:
+    Resource Locks
 
 A "Coverage Audit" sheet at the end groups every type present in the tenant
 and flags which ones only land in "All Resources" — i.e. where adding a
@@ -104,6 +120,29 @@ DEFAULT_QUERIES: List[Dict[str, str]] = [
         ),
     },
     {
+        "sheet": "VM Scale Sets",
+        "table": "Resources",
+        "query": (
+            "Resources | where type =~ 'microsoft.compute/virtualmachinescalesets' "
+            "| project subscriptionId, resourceGroup, name, location, "
+            "skuName=tostring(sku.name), skuTier=tostring(sku.tier), "
+            "capacity=toint(sku.capacity), "
+            "orchestrationMode=tostring(properties.orchestrationMode), "
+            "upgradeMode=tostring(properties.upgradePolicy.mode), "
+            "osType=tostring(properties.virtualMachineProfile.storageProfile.osDisk.osType), "
+            "imagePublisher=tostring(properties.virtualMachineProfile.storageProfile.imageReference.publisher), "
+            "imageOffer=tostring(properties.virtualMachineProfile.storageProfile.imageReference.offer), "
+            "imageSku=tostring(properties.virtualMachineProfile.storageProfile.imageReference.sku), "
+            "spotPriority=tostring(properties.virtualMachineProfile.priority), "
+            "spotEvictionPolicy=tostring(properties.virtualMachineProfile.evictionPolicy), "
+            "overprovision=tobool(properties.overprovision), "
+            "singlePlacementGroup=tobool(properties.singlePlacementGroup), "
+            "platformFaultDomainCount=toint(properties.platformFaultDomainCount), "
+            "zones=tostring(zones), "
+            "tags=tostring(tags), id"
+        ),
+    },
+    {
         "sheet": "Disks",
         "table": "Resources",
         "query": (
@@ -119,6 +158,22 @@ DEFAULT_QUERIES: List[Dict[str, str]] = [
             "networkAccessPolicy=tostring(properties.networkAccessPolicy), "
             "publicNetworkAccess=tostring(properties.publicNetworkAccess), "
             "managedBy=tostring(managedBy), "
+            "tags=tostring(tags), id"
+        ),
+    },
+    {
+        "sheet": "Snapshots",
+        "table": "Resources",
+        "query": (
+            "Resources | where type =~ 'microsoft.compute/snapshots' "
+            "| project subscriptionId, resourceGroup, name, location, "
+            "skuName=tostring(sku.name), "
+            "diskSizeGB=toint(properties.diskSizeGB), "
+            "timeCreated=tostring(properties.timeCreated), "
+            "osType=tostring(properties.osType), "
+            "incremental=tobool(properties.incremental), "
+            "encryptionType=tostring(properties.encryption.type), "
+            "sourceResourceId=tostring(properties.creationData.sourceResourceId), "
             "tags=tostring(tags), id"
         ),
     },
@@ -147,6 +202,35 @@ DEFAULT_QUERIES: List[Dict[str, str]] = [
         ),
     },
     {
+        "sheet": "AKS Node Pools",
+        "table": "Resources",
+        "query": (
+            "Resources | where type =~ 'microsoft.containerservice/managedclusters' "
+            "| mv-expand pool=properties.agentPoolProfiles "
+            "| project subscriptionId, resourceGroup, clusterName=name, location, "
+            "poolName=tostring(pool.name), "
+            "poolMode=tostring(pool.mode), "
+            "osType=tostring(pool.osType), "
+            "osSku=tostring(pool.osSKU), "
+            "vmSize=tostring(pool.vmSize), "
+            "count=toint(pool.['count']), "
+            "minCount=toint(pool.minCount), "
+            "maxCount=toint(pool.maxCount), "
+            "enableAutoScaling=tobool(pool.enableAutoScaling), "
+            "orchestratorVersion=tostring(pool.orchestratorVersion), "
+            "nodeImageVersion=tostring(pool.nodeImageVersion), "
+            "osDiskSizeGB=toint(pool.osDiskSizeGB), "
+            "osDiskType=tostring(pool.osDiskType), "
+            "vnetSubnetId=tostring(pool.vnetSubnetID), "
+            "podSubnetId=tostring(pool.podSubnetID), "
+            "scaleSetPriority=tostring(pool.scaleSetPriority), "
+            "scaleSetEvictionPolicy=tostring(pool.scaleSetEvictionPolicy), "
+            "spotMaxPrice=todouble(pool.spotMaxPrice), "
+            "availabilityZones=tostring(pool.availabilityZones), "
+            "id=strcat(id, '/agentPools/', tostring(pool.name))"
+        ),
+    },
+    {
         "sheet": "App Services",
         "table": "Resources",
         "query": (
@@ -167,6 +251,80 @@ DEFAULT_QUERIES: List[Dict[str, str]] = [
             "pythonVersion=tostring(properties.siteConfig.pythonVersion), "
             "nodeVersion=tostring(properties.siteConfig.nodeVersion), "
             "identityType=tostring(identity.type), "
+            "tags=tostring(tags), id"
+        ),
+    },
+    {
+        "sheet": "App Service Plans",
+        "table": "Resources",
+        "query": (
+            "Resources | where type =~ 'microsoft.web/serverfarms' "
+            "| project subscriptionId, resourceGroup, name, location, "
+            "kind, "
+            "skuName=tostring(sku.name), skuTier=tostring(sku.tier), "
+            "skuSize=tostring(sku.size), skuFamily=tostring(sku.family), "
+            "skuCapacity=toint(sku.capacity), "
+            "perSiteScaling=tobool(properties.perSiteScaling), "
+            "elasticScaleEnabled=tobool(properties.elasticScaleEnabled), "
+            "maximumElasticWorkerCount=toint(properties.maximumElasticWorkerCount), "
+            "numberOfWorkers=toint(properties.numberOfWorkers), "
+            "numberOfSites=toint(properties.numberOfSites), "
+            "isXenon=tobool(properties.isXenon), "
+            "hyperV=tobool(properties.hyperV), "
+            "reserved=tobool(properties.reserved), "
+            "zoneRedundant=tobool(properties.zoneRedundant), "
+            "tags=tostring(tags), id"
+        ),
+    },
+    {
+        "sheet": "Container Apps Environments",
+        "table": "Resources",
+        "query": (
+            "Resources | where type =~ 'microsoft.app/managedenvironments' "
+            "| project subscriptionId, resourceGroup, name, location, "
+            "kind, "
+            "provisioningState=tostring(properties.provisioningState), "
+            "defaultDomain=tostring(properties.defaultDomain), "
+            "staticIp=tostring(properties.staticIp), "
+            "vnetSubnetId=tostring(properties.vnetConfiguration.infrastructureSubnetId), "
+            "internal=tobool(properties.vnetConfiguration.internal), "
+            "workloadProfilesCount=array_length(properties.workloadProfiles), "
+            "zoneRedundant=tobool(properties.zoneRedundant), "
+            "tags=tostring(tags), id"
+        ),
+    },
+    {
+        "sheet": "Container Apps",
+        "table": "Resources",
+        "query": (
+            "Resources | where type =~ 'microsoft.app/containerapps' "
+            "| project subscriptionId, resourceGroup, name, location, "
+            "managedEnvironmentId=tostring(properties.managedEnvironmentId), "
+            "workloadProfileName=tostring(properties.workloadProfileName), "
+            "minReplicas=toint(properties.template.scale.minReplicas), "
+            "maxReplicas=toint(properties.template.scale.maxReplicas), "
+            "activeRevisionsMode=tostring(properties.configuration.activeRevisionsMode), "
+            "ingressExternal=tobool(properties.configuration.ingress.external), "
+            "targetPort=toint(properties.configuration.ingress.targetPort), "
+            "transport=tostring(properties.configuration.ingress.transport), "
+            "containerCount=array_length(properties.template.containers), "
+            "identityType=tostring(identity.type), "
+            "tags=tostring(tags), id"
+        ),
+    },
+    {
+        "sheet": "Container Registries",
+        "table": "Resources",
+        "query": (
+            "Resources | where type =~ 'microsoft.containerregistry/registries' "
+            "| project subscriptionId, resourceGroup, name, location, "
+            "skuName=tostring(sku.name), skuTier=tostring(sku.tier), "
+            "adminUserEnabled=tobool(properties.adminUserEnabled), "
+            "publicNetworkAccess=tostring(properties.publicNetworkAccess), "
+            "networkRuleDefaultAction=tostring(properties.networkRuleSet.defaultAction), "
+            "zoneRedundancy=tostring(properties.zoneRedundancy), "
+            "anonymousPullEnabled=tobool(properties.anonymousPullEnabled), "
+            "encryptionStatus=tostring(properties.encryption.status), "
             "tags=tostring(tags), id"
         ),
     },
@@ -233,6 +391,282 @@ DEFAULT_QUERIES: List[Dict[str, str]] = [
             "outboundRuleCount=array_length(properties.outboundRules), "
             "probeCount=array_length(properties.probes), "
             "tags=tostring(tags), id"
+        ),
+    },
+    {
+        "sheet": "LB Backend Members",
+        "table": "Resources",
+        "query": (
+            "Resources | where type =~ 'microsoft.network/loadbalancers' "
+            "| mv-expand pool=properties.backendAddressPools "
+            "| mv-expand ipconfig=pool.properties.backendIPConfigurations "
+            "| project subscriptionId, resourceGroup, lbName=name, location, "
+            "poolName=tostring(pool.name), "
+            "backendIpConfigId=tostring(ipconfig.id), "
+            "id=strcat(id, '/backendAddressPools/', tostring(pool.name))"
+        ),
+    },
+    {
+        "sheet": "Application Gateways",
+        "table": "Resources",
+        "query": (
+            "Resources | where type =~ 'microsoft.network/applicationgateways' "
+            "| project subscriptionId, resourceGroup, name, location, "
+            "skuName=tostring(properties.sku.name), "
+            "skuTier=tostring(properties.sku.tier), "
+            "skuCapacity=toint(properties.sku.capacity), "
+            "autoscaleMin=toint(properties.autoscaleConfiguration.minCapacity), "
+            "autoscaleMax=toint(properties.autoscaleConfiguration.maxCapacity), "
+            "operationalState=tostring(properties.operationalState), "
+            "enableHttp2=tobool(properties.enableHttp2), "
+            "wafEnabled=tobool(properties.webApplicationFirewallConfiguration.enabled), "
+            "wafFirewallMode=tostring(properties.webApplicationFirewallConfiguration.firewallMode), "
+            "firewallPolicyId=tostring(properties.firewallPolicy.id), "
+            "frontendIpCount=array_length(properties.frontendIPConfigurations), "
+            "frontendPortCount=array_length(properties.frontendPorts), "
+            "listenerCount=array_length(properties.httpListeners), "
+            "backendPoolCount=array_length(properties.backendAddressPools), "
+            "backendHttpSettingsCount=array_length(properties.backendHttpSettingsCollection), "
+            "requestRoutingRuleCount=array_length(properties.requestRoutingRules), "
+            "sslCertificateCount=array_length(properties.sslCertificates), "
+            "zones=tostring(zones), "
+            "tags=tostring(tags), id"
+        ),
+    },
+    {
+        "sheet": "VNet Gateways",
+        "table": "Resources",
+        "query": (
+            "Resources | where type =~ 'microsoft.network/virtualnetworkgateways' "
+            "| project subscriptionId, resourceGroup, name, location, "
+            "gatewayType=tostring(properties.gatewayType), "
+            "vpnType=tostring(properties.vpnType), "
+            "vpnGatewayGeneration=tostring(properties.vpnGatewayGeneration), "
+            "skuName=tostring(properties.sku.name), "
+            "skuTier=tostring(properties.sku.tier), "
+            "skuCapacity=toint(properties.sku.capacity), "
+            "activeActive=tobool(properties.activeActive), "
+            "enableBgp=tobool(properties.enableBgp), "
+            "asn=tostring(properties.bgpSettings.asn), "
+            "bgpPeeringAddress=tostring(properties.bgpSettings.bgpPeeringAddress), "
+            "gatewaySubnetId=tostring(properties.ipConfigurations[0].properties.subnet.id), "
+            "publicIpId0=tostring(properties.ipConfigurations[0].properties.publicIPAddress.id), "
+            "publicIpId1=tostring(properties.ipConfigurations[1].properties.publicIPAddress.id), "
+            "natRulesCount=array_length(properties.natRules), "
+            "tags=tostring(tags), id"
+        ),
+    },
+    {
+        "sheet": "VPN Connections",
+        "table": "Resources",
+        "query": (
+            "Resources | where type =~ 'microsoft.network/connections' "
+            "| project subscriptionId, resourceGroup, name, location, "
+            "connectionType=tostring(properties.connectionType), "
+            "connectionStatus=tostring(properties.connectionStatus), "
+            "connectionProtocol=tostring(properties.connectionProtocol), "
+            "routingWeight=toint(properties.routingWeight), "
+            "enableBgp=tobool(properties.enableBgp), "
+            "useLocalAzureIpAddress=tobool(properties.useLocalAzureIpAddress), "
+            "virtualNetworkGateway1Id=tostring(properties.virtualNetworkGateway1.id), "
+            "virtualNetworkGateway2Id=tostring(properties.virtualNetworkGateway2.id), "
+            "localNetworkGateway2Id=tostring(properties.localNetworkGateway2.id), "
+            "peerId=tostring(properties.peer.id), "
+            "egressBytesTransferred=tolong(properties.egressBytesTransferred), "
+            "ingressBytesTransferred=tolong(properties.ingressBytesTransferred), "
+            "tags=tostring(tags), id"
+        ),
+    },
+    {
+        "sheet": "Local Network Gateways",
+        "table": "Resources",
+        "query": (
+            "Resources | where type =~ 'microsoft.network/localnetworkgateways' "
+            "| project subscriptionId, resourceGroup, name, location, "
+            "gatewayIpAddress=tostring(properties.gatewayIpAddress), "
+            "fqdn=tostring(properties.fqdn), "
+            "addressPrefixes=tostring(properties.localNetworkAddressSpace.addressPrefixes), "
+            "bgpAsn=tostring(properties.bgpSettings.asn), "
+            "bgpPeerWeight=toint(properties.bgpSettings.peerWeight), "
+            "bgpPeeringAddress=tostring(properties.bgpSettings.bgpPeeringAddress), "
+            "tags=tostring(tags), id"
+        ),
+    },
+    {
+        "sheet": "ExpressRoute Circuits",
+        "table": "Resources",
+        "query": (
+            "Resources | where type =~ 'microsoft.network/expressroutecircuits' "
+            "| project subscriptionId, resourceGroup, name, location, "
+            "skuName=tostring(sku.name), skuTier=tostring(sku.tier), skuFamily=tostring(sku.family), "
+            "serviceProviderName=tostring(properties.serviceProviderProperties.serviceProviderName), "
+            "peeringLocation=tostring(properties.serviceProviderProperties.peeringLocation), "
+            "bandwidthInMbps=toint(properties.serviceProviderProperties.bandwidthInMbps), "
+            "circuitProvisioningState=tostring(properties.circuitProvisioningState), "
+            "serviceProviderProvisioningState=tostring(properties.serviceProviderProvisioningState), "
+            "allowClassicOperations=tobool(properties.allowClassicOperations), "
+            "globalReachEnabled=tobool(properties.globalReachEnabled), "
+            "peeringCount=array_length(properties.peerings), "
+            "tags=tostring(tags), id"
+        ),
+    },
+    {
+        "sheet": "Virtual WANs",
+        "table": "Resources",
+        "query": (
+            "Resources | where type =~ 'microsoft.network/virtualwans' "
+            "| project subscriptionId, resourceGroup, name, location, "
+            "wanType=tostring(properties.type), "
+            "allowBranchToBranchTraffic=tobool(properties.allowBranchToBranchTraffic), "
+            "disableVpnEncryption=tobool(properties.disableVpnEncryption), "
+            "tags=tostring(tags), id"
+        ),
+    },
+    {
+        "sheet": "Virtual Hubs",
+        "table": "Resources",
+        "query": (
+            "Resources | where type =~ 'microsoft.network/virtualhubs' "
+            "| project subscriptionId, resourceGroup, name, location, "
+            "addressPrefix=tostring(properties.addressPrefix), "
+            "virtualWanId=tostring(properties.virtualWan.id), "
+            "vpnGatewayId=tostring(properties.vpnGateway.id), "
+            "expressRouteGatewayId=tostring(properties.expressRouteGateway.id), "
+            "p2sVpnGatewayId=tostring(properties.p2SVpnGateway.id), "
+            "azureFirewallId=tostring(properties.azureFirewall.id), "
+            "sku=tostring(properties.sku), "
+            "hubRoutingPreference=tostring(properties.hubRoutingPreference), "
+            "virtualRouterAsn=tolong(properties.virtualRouterAsn), "
+            "tags=tostring(tags), id"
+        ),
+    },
+    {
+        "sheet": "Azure Firewalls",
+        "table": "Resources",
+        "query": (
+            "Resources | where type =~ 'microsoft.network/azurefirewalls' "
+            "| project subscriptionId, resourceGroup, name, location, "
+            "skuName=tostring(properties.sku.name), "
+            "skuTier=tostring(properties.sku.tier), "
+            "threatIntelMode=tostring(properties.threatIntelMode), "
+            "firewallPolicyId=tostring(properties.firewallPolicy.id), "
+            "virtualHubId=tostring(properties.virtualHub.id), "
+            "applicationRuleCollectionCount=array_length(properties.applicationRuleCollections), "
+            "networkRuleCollectionCount=array_length(properties.networkRuleCollections), "
+            "natRuleCollectionCount=array_length(properties.natRuleCollections), "
+            "ipConfigCount=array_length(properties.ipConfigurations), "
+            "zones=tostring(zones), "
+            "tags=tostring(tags), id"
+        ),
+    },
+    {
+        "sheet": "Bastion Hosts",
+        "table": "Resources",
+        "query": (
+            "Resources | where type =~ 'microsoft.network/bastionhosts' "
+            "| project subscriptionId, resourceGroup, name, location, "
+            "skuName=tostring(sku.name), "
+            "scaleUnits=toint(properties.scaleUnits), "
+            "dnsName=tostring(properties.dnsName), "
+            "enableTunneling=tobool(properties.enableTunneling), "
+            "enableShareableLink=tobool(properties.enableShareableLink), "
+            "enableIpConnect=tobool(properties.enableIpConnect), "
+            "enableFileCopy=tobool(properties.enableFileCopy), "
+            "disableCopyPaste=tobool(properties.disableCopyPaste), "
+            "enableKerberos=tobool(properties.enableKerberos), "
+            "ipConfigCount=array_length(properties.ipConfigurations), "
+            "tags=tostring(tags), id"
+        ),
+    },
+    {
+        "sheet": "NAT Gateways",
+        "table": "Resources",
+        "query": (
+            "Resources | where type =~ 'microsoft.network/natgateways' "
+            "| project subscriptionId, resourceGroup, name, location, "
+            "skuName=tostring(sku.name), "
+            "idleTimeoutInMinutes=toint(properties.idleTimeoutInMinutes), "
+            "publicIpCount=array_length(properties.publicIpAddresses), "
+            "publicIpPrefixCount=array_length(properties.publicIpPrefixes), "
+            "associatedSubnetCount=array_length(properties.subnets), "
+            "zones=tostring(zones), "
+            "tags=tostring(tags), id"
+        ),
+    },
+    {
+        "sheet": "Route Tables",
+        "table": "Resources",
+        "query": (
+            "Resources | where type =~ 'microsoft.network/routetables' "
+            "| project subscriptionId, resourceGroup, name, location, "
+            "disableBgpRoutePropagation=tobool(properties.disableBgpRoutePropagation), "
+            "routeCount=array_length(properties.routes), "
+            "associatedSubnetCount=array_length(properties.subnets), "
+            "tags=tostring(tags), id"
+        ),
+    },
+    {
+        "sheet": "Routes",
+        "table": "Resources",
+        "query": (
+            "Resources | where type =~ 'microsoft.network/routetables' "
+            "| mv-expand route=properties.routes "
+            "| project subscriptionId, resourceGroup, routeTableName=name, location, "
+            "routeName=tostring(route.name), "
+            "addressPrefix=tostring(route.properties.addressPrefix), "
+            "nextHopType=tostring(route.properties.nextHopType), "
+            "nextHopIpAddress=tostring(route.properties.nextHopIpAddress), "
+            "hasBgpOverride=tobool(route.properties.hasBgpOverride), "
+            "id=strcat(id, '/routes/', tostring(route.name))"
+        ),
+    },
+    {
+        "sheet": "Private Endpoints",
+        "table": "Resources",
+        "query": (
+            "Resources | where type =~ 'microsoft.network/privateendpoints' "
+            "| extend pls = properties.privateLinkServiceConnections[0].properties "
+            "| project subscriptionId, resourceGroup, name, location, "
+            "subnetId=tostring(properties.subnet.id), "
+            "targetResourceId=tostring(pls.privateLinkServiceId), "
+            "groupIds=tostring(pls.groupIds), "
+            "customDnsConfigCount=array_length(properties.customDnsConfigs), "
+            "networkInterfaceCount=array_length(properties.networkInterfaces), "
+            "nicId0=tostring(properties.networkInterfaces[0].id), "
+            "tags=tostring(tags), id"
+        ),
+    },
+    {
+        "sheet": "DNS Zones",
+        "table": "Resources",
+        "query": (
+            "Resources "
+            "| where type =~ 'microsoft.network/dnszones' "
+            "    or type =~ 'microsoft.network/privatednszones' "
+            "| project subscriptionId, resourceGroup, name, "
+            "zoneType=iif(type =~ 'microsoft.network/privatednszones', 'Private', 'Public'), "
+            "location=tostring(location), "
+            "numberOfRecordSets=toint(properties.numberOfRecordSets), "
+            "numberOfVirtualNetworkLinks=toint(properties.numberOfVirtualNetworkLinks), "
+            "numberOfVirtualNetworkLinksWithRegistration=toint(properties.numberOfVirtualNetworkLinksWithRegistration), "
+            "nameServers=tostring(properties.nameServers), "
+            "maxNumberOfRecordSets=toint(properties.maxNumberOfRecordSets), "
+            "tags=tostring(tags), id"
+        ),
+    },
+    {
+        "sheet": "Private DNS VNet Links",
+        "table": "Resources",
+        "query": (
+            "Resources | where type =~ 'microsoft.network/privatednszones/virtualnetworklinks' "
+            "| project subscriptionId, resourceGroup, "
+            "privateDnsZoneName=tostring(split(id, '/')[8]), "
+            "linkName=name, "
+            "vnetId=tostring(properties.virtualNetwork.id), "
+            "registrationEnabled=tobool(properties.registrationEnabled), "
+            "provisioningState=tostring(properties.provisioningState), "
+            "virtualNetworkLinkState=tostring(properties.virtualNetworkLinkState), "
+            "id"
         ),
     },
     {
@@ -460,20 +894,45 @@ DEFAULT_QUERIES: List[Dict[str, str]] = [
 # Resource types we project into a dedicated sheet beyond "All Resources".
 # Used by the Coverage Audit sheet to flag types that only land in "All Resources".
 DEDICATED_TYPES = {
+    # Compute
     "microsoft.compute/virtualmachines",
+    "microsoft.compute/virtualmachinescalesets",
     "microsoft.compute/disks",
+    "microsoft.compute/snapshots",
     "microsoft.containerservice/managedclusters",
     "microsoft.web/sites",
+    "microsoft.web/serverfarms",
+    "microsoft.app/managedenvironments",
+    "microsoft.app/containerapps",
+    "microsoft.containerregistry/registries",
+    # Network
     "microsoft.network/networkinterfaces",
     "microsoft.network/publicipaddresses",
     "microsoft.network/networksecuritygroups",
     "microsoft.network/loadbalancers",
+    "microsoft.network/applicationgateways",
+    "microsoft.network/virtualnetworkgateways",
+    "microsoft.network/connections",
+    "microsoft.network/localnetworkgateways",
+    "microsoft.network/expressroutecircuits",
+    "microsoft.network/virtualwans",
+    "microsoft.network/virtualhubs",
+    "microsoft.network/azurefirewalls",
+    "microsoft.network/bastionhosts",
+    "microsoft.network/natgateways",
+    "microsoft.network/routetables",
+    "microsoft.network/privateendpoints",
+    "microsoft.network/dnszones",
+    "microsoft.network/privatednszones",
+    "microsoft.network/privatednszones/virtualnetworklinks",
     "microsoft.network/virtualnetworks",
+    # Data
     "microsoft.sql/servers/databases",
     "microsoft.documentdb/databaseaccounts",
     "microsoft.storage/storageaccounts",
     "microsoft.storage/storageaccounts/blobservices/containers",
     "microsoft.keyvault/vaults",
+    # Governance
     "microsoft.authorization/locks",
 }
 
