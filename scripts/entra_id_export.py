@@ -24,7 +24,7 @@ _root = Path(__file__).parent.parent
 if str(_root) not in sys.path:
     sys.path.insert(0, str(_root))
 
-from sslib.auth import get_credential, get_graph_token, quiet_azure_loggers
+from sslib.auth import get_credential, quiet_azure_loggers
 from sslib.cloud import detect_cloud, graph_scope_for_cloud
 from sslib.config import load_config
 from sslib.output import make_filename, save_dataframes, snapshot_metadata
@@ -32,11 +32,20 @@ from sslib.output import make_filename, save_dataframes, snapshot_metadata
 logger = logging.getLogger(__name__)
 
 
-def graph_get_all(token: str, base: str, path: str, params: Optional[Dict] = None) -> List[Dict]:
+def graph_get_all(
+    credential,
+    scope: str,
+    base: str,
+    path: str,
+    params: Optional[Dict] = None,
+) -> List[Dict]:
     """
     GET a Microsoft Graph collection endpoint, following @odata.nextLink to exhaustion.
 
-    Handles 429 (Retry-After) and transient 5xx with exponential backoff.
+    Handles 429 (Retry-After), transient 5xx with exponential backoff, and 401
+    by re-acquiring the bearer token (long exports can outlive a Graph token's
+    ~1h validity). Tokens are fetched per page; the credential caches them, so
+    refresh is near-free when the token is still valid.
     """
     import time
 
@@ -47,10 +56,13 @@ def graph_get_all(token: str, base: str, path: str, params: Optional[Dict] = Non
         from urllib.parse import urlencode
         url = f"{url}?{urlencode(params)}"
 
-    headers = {"Authorization": f"Bearer {token}"}
     items: List[Dict] = []
 
     while url:
+        token = credential.get_token(scope).token
+        headers = {"Authorization": f"Bearer {token}"}
+        reauthed = False
+
         for attempt in range(5):
             resp = requests.get(url, headers=headers, timeout=60)
             if resp.status_code == 429:
@@ -63,6 +75,13 @@ def graph_get_all(token: str, base: str, path: str, params: Optional[Dict] = Non
                 logger.warning("Graph %d on %s — backing off %ds", resp.status_code, path, wait)
                 time.sleep(wait)
                 continue
+            if resp.status_code == 401 and not reauthed:
+                logger.info("Graph 401 on %s — refreshing token and retrying", path)
+                token = credential.get_token(scope).token
+                headers = {"Authorization": f"Bearer {token}"}
+                reauthed = True
+                continue
+            # Loop exits via break only on a non-retryable response (success or 4xx that we surface below).
             break
         else:
             logger.error("Graph %s exhausted retries", path)
@@ -99,7 +118,7 @@ def main() -> int:
     print(f"Microsoft Graph endpoint: {base}")
 
     try:
-        token = get_graph_token(credential, scope)
+        credential.get_token(scope)
     except Exception as e:
         print(f"ERROR: failed to acquire Graph token ({e}). "
               "Make sure your account has directory read access.")
@@ -125,7 +144,7 @@ def main() -> int:
     for sheet, path, params in pulls:
         try:
             print(f"  • {sheet}...")
-            rows = graph_get_all(token, base, path, params)
+            rows = graph_get_all(credential, scope, base, path, params)
             df = pd.DataFrame(rows) if rows else pd.DataFrame()
             sheets[sheet] = df
             summary.append({"Sheet": sheet, "Path": path, "Rows": len(df)})

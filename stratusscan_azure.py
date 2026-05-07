@@ -141,21 +141,22 @@ def main() -> int:
     if not check_dependencies():
         return 1
 
+    session_rc = 0
     while True:
         display_main_menu()
         choice = input("\n> ").strip().lower()
 
         if choice == "q":
-            return 0
+            return session_rc
         if choice not in MENU:
             print("Invalid selection.")
             continue
 
         name, script = MENU[choice]
         if choice == "5":
-            run_all()
+            session_rc |= run_all()
         elif script is not None:
-            execute_script(script)
+            session_rc |= execute_script(script)
         input("\nPress Enter to continue...")
 
 
