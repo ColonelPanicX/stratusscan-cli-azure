@@ -30,7 +30,7 @@ if str(_root) not in sys.path:
 
 from sslib.auth import get_credential, quiet_azure_loggers
 from sslib.cloud import detect_cloud
-from sslib.config import load_config
+from sslib.config import load_config, resolve_scope_label
 from sslib.output import make_filename, save_dataframes, snapshot_metadata
 from sslib.subscriptions import filter_subscription_ids, list_subscriptions
 
@@ -57,6 +57,82 @@ DEFAULT_QUERIES: List[Dict[str, str]] = [
         "query": (
             "ResourceContainers | project subscriptionId, type, name, "
             "tenantId, location, id"
+        ),
+    },
+    {
+        "sheet": "Subnets",
+        "table": "Resources",
+        "query": (
+            "Resources | where type =~ 'microsoft.network/virtualnetworks' "
+            "| mv-expand subnet=properties.subnets "
+            "| project subscriptionId, resourceGroup, vnetName=name, location, "
+            "subnetName=tostring(subnet.name), "
+            "addressPrefix=tostring(subnet.properties.addressPrefix), "
+            "addressPrefixes=tostring(subnet.properties.addressPrefixes), "
+            "nsgId=tostring(subnet.properties.networkSecurityGroup.id), "
+            "routeTableId=tostring(subnet.properties.routeTable.id), "
+            "natGatewayId=tostring(subnet.properties.natGateway.id), "
+            "delegations=tostring(subnet.properties.delegations), "
+            "serviceEndpoints=tostring(subnet.properties.serviceEndpoints), "
+            "privateEndpointNetworkPolicies=tostring(subnet.properties.privateEndpointNetworkPolicies), "
+            "id=strcat(id, '/subnets/', tostring(subnet.name))"
+        ),
+    },
+    {
+        "sheet": "VNet Peerings",
+        "table": "Resources",
+        "query": (
+            "Resources | where type =~ 'microsoft.network/virtualnetworks' "
+            "| mv-expand peering=properties.virtualNetworkPeerings "
+            "| where isnotnull(peering) "
+            "| project subscriptionId, resourceGroup, vnetName=name, location, "
+            "peeringName=tostring(peering.name), "
+            "peeringState=tostring(peering.properties.peeringState), "
+            "remoteVnetId=tostring(peering.properties.remoteVirtualNetwork.id), "
+            "allowVirtualNetworkAccess=tobool(peering.properties.allowVirtualNetworkAccess), "
+            "allowForwardedTraffic=tobool(peering.properties.allowForwardedTraffic), "
+            "allowGatewayTransit=tobool(peering.properties.allowGatewayTransit), "
+            "useRemoteGateways=tobool(peering.properties.useRemoteGateways), "
+            "id=strcat(id, '/peerings/', tostring(peering.name))"
+        ),
+    },
+    {
+        "sheet": "SQL Databases",
+        "table": "Resources",
+        "query": (
+            "Resources | where type =~ 'microsoft.sql/servers/databases' "
+            "| project subscriptionId, resourceGroup, "
+            "serverName=tostring(split(id, '/')[8]), name, location, "
+            "skuName=tostring(sku.name), skuTier=tostring(sku.tier), "
+            "status=tostring(properties.status), "
+            "collation=tostring(properties.collation), "
+            "maxSizeBytes=tolong(properties.maxSizeBytes), "
+            "zoneRedundant=tobool(properties.zoneRedundant), id"
+        ),
+    },
+    {
+        "sheet": "Storage Containers",
+        "table": "Resources",
+        "query": (
+            "Resources | where type =~ 'microsoft.storage/storageaccounts/blobservices/containers' "
+            "| project subscriptionId, resourceGroup, "
+            "storageAccount=tostring(split(id, '/')[8]), "
+            "containerName=name, "
+            "publicAccess=tostring(properties.publicAccess), "
+            "hasImmutabilityPolicy=tobool(properties.hasImmutabilityPolicy), "
+            "hasLegalHold=tobool(properties.hasLegalHold), "
+            "leaseStatus=tostring(properties.leaseStatus), "
+            "leaseState=tostring(properties.leaseState), id"
+        ),
+    },
+    {
+        "sheet": "Resource Locks",
+        "table": "Resources",
+        "query": (
+            "Resources | where type =~ 'microsoft.authorization/locks' "
+            "| project subscriptionId, resourceGroup, name, "
+            "level=tostring(properties.level), "
+            "notes=tostring(properties.notes), id"
         ),
     },
     {
@@ -222,8 +298,7 @@ def main() -> int:
         **sheets,
     }
 
-    tenant = config.get("tenant_name", "AZURE-TENANT")
-    filename = make_filename(tenant, "resource-graph", "all")
+    filename = make_filename(resolve_scope_label(config, sub_ids), "resource-graph", "all")
     path = save_dataframes(sheets, filename)
     if path:
         print(f"\nWrote: {path}")

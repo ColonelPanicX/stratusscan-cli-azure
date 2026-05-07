@@ -22,7 +22,7 @@ if str(_root) not in sys.path:
 
 from sslib.auth import get_credential, quiet_azure_loggers
 from sslib.cloud import detect_cloud
-from sslib.config import get_subscription_label, load_config
+from sslib.config import get_subscription_label, load_config, resolve_scope_label
 from sslib.output import make_filename, save_dataframes, snapshot_metadata
 from sslib.subscriptions import filter_subscription_ids, list_subscriptions
 
@@ -143,8 +143,7 @@ def main() -> int:
     sheets["Role Assignments"] = pd.DataFrame(all_assignments)
     sheets["Custom Role Definitions"] = pd.DataFrame(all_role_defs)
 
-    tenant = config.get("tenant_name", "AZURE-TENANT")
-    filename = make_filename(tenant, "rbac", "all")
+    filename = make_filename(resolve_scope_label(config, sub_ids), "rbac", "all")
     path = save_dataframes(sheets, filename)
     if path:
         print(f"\nWrote: {path}")
