@@ -60,6 +60,39 @@ DEFAULT_QUERIES: List[Dict[str, str]] = [
         ),
     },
     {
+        "sheet": "Virtual Machines",
+        "table": "Resources",
+        "query": (
+            "Resources | where type =~ 'microsoft.compute/virtualmachines' "
+            "| extend nicArray = properties.networkProfile.networkInterfaces "
+            "| extend nicIds = strcat_array("
+            "    extract_all(\"\\\"id\\\":\\\"([^\\\"]+)\\\"\", tostring(nicArray)), '; ') "
+            "| project subscriptionId, resourceGroup, name, location, "
+            "zones=tostring(zones), "
+            "vmSize=tostring(properties.hardwareProfile.vmSize), "
+            "osType=tostring(properties.storageProfile.osDisk.osType), "
+            "imagePublisher=tostring(properties.storageProfile.imageReference.publisher), "
+            "imageOffer=tostring(properties.storageProfile.imageReference.offer), "
+            "imageSku=tostring(properties.storageProfile.imageReference.sku), "
+            "imageVersion=tostring(properties.storageProfile.imageReference.version), "
+            "osDiskName=tostring(properties.storageProfile.osDisk.name), "
+            "osDiskSizeGB=toint(properties.storageProfile.osDisk.diskSizeGB), "
+            "osDiskType=tostring(properties.storageProfile.osDisk.managedDisk.storageAccountType), "
+            "dataDiskCount=array_length(properties.storageProfile.dataDisks), "
+            "nicIds, "
+            "availabilitySetId=tostring(properties.availabilitySet.id), "
+            "priority=tostring(properties.priority), "
+            "evictionPolicy=tostring(properties.evictionPolicy), "
+            "licenseType=tostring(properties.licenseType), "
+            "bootDiagnostics=tostring(properties.diagnosticsProfile.bootDiagnostics.enabled), "
+            "powerState=tostring(properties.extended.instanceView.powerState.code), "
+            "provisioningState=tostring(properties.provisioningState), "
+            "vmId=tostring(properties.vmId), "
+            "identityType=tostring(identity.type), "
+            "tags=tostring(tags), id"
+        ),
+    },
+    {
         "sheet": "Subnets",
         "table": "Resources",
         "query": (
