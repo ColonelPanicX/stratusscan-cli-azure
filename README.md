@@ -20,9 +20,7 @@ to run cleanly in **Azure Cloud Shell**.
 # Local (already authenticated via `az login`)
 git clone <repo-url> StratusScan-Azure
 cd StratusScan-Azure
-pip install --user azure-identity azure-mgmt-resource azure-mgmt-resourcegraph \
-                   azure-mgmt-authorization azure-mgmt-policyinsights \
-                   pandas openpyxl requests
+pip install --user -r requirements.txt
 python configure.py        # one-time scope + subscription mapping
 python stratusscan_azure.py
 ```
@@ -65,10 +63,7 @@ match the StratusScan-AWS philosophy of "no credentials lying on disk."
 # 2. Clone and install
 git clone <repo-url> StratusScan-Azure
 cd StratusScan-Azure
-pip install --user azure-mgmt-resourcegraph azure-mgmt-policyinsights openpyxl
-
-# (azure-identity, azure-mgmt-resource, azure-mgmt-authorization, pandas,
-#  and requests are typically preinstalled in Cloud Shell)
+pip install --user -r requirements.txt
 
 # 3. Run
 python configure.py

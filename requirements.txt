@@ -1,0 +1,10 @@
+azure-identity>=1.15.0
+# Pinned <25: v25.0.0 removed the .policy submodule (PolicyClient).
+azure-mgmt-resource>=23.0.0,<25
+azure-mgmt-subscription>=3.1.1
+azure-mgmt-resourcegraph>=8.0.0
+azure-mgmt-authorization>=4.0.0
+azure-mgmt-policyinsights>=1.0.0
+pandas>=2.0.0
+openpyxl>=3.1.0
+requests>=2.31.0
