@@ -1070,6 +1070,7 @@ def main() -> int:
                 {"Sheet": sheet, "Table": q["table"], "Rows": f"ERROR: {e}"}
             )
 
+    cost_map: Dict[str, float] = {}
     try:
         from sslib.cost_management import get_cost_by_resource
         print("  • Cost by Resource (CostManagement)...")
@@ -1097,12 +1098,29 @@ def main() -> int:
         "Coverage Audit": audit_df,
     }
 
-    filename = make_filename(resolve_scope_label(config, sub_ids), "resource-graph", "all")
+    scope_label = resolve_scope_label(config, sub_ids)
+    filename = make_filename(scope_label, "resource-graph", "all")
     path = save_dataframes(sheets, filename)
-    if path:
-        print(f"\nWrote: {path}")
-        return 0
-    return 1
+    if not path:
+        return 1
+    print(f"\nWrote: {path}")
+
+    try:
+        from sslib.findings import build_cost_findings_html
+        html_path = path.with_suffix(".html")
+        cloud = detect_cloud()
+        html = build_cost_findings_html(
+            {k: v for k, v in sheets.items() if hasattr(v, "empty")},
+            cost_map,
+            scope_label=scope_label,
+            cloud_name=cloud.get("name", ""),
+        )
+        html_path.write_text(html, encoding="utf-8")
+        print(f"Wrote: {html_path}")
+    except Exception as e:
+        logger.error("Cost findings HTML report failed: %s", e)
+
+    return 0
 
 
 if __name__ == "__main__":
