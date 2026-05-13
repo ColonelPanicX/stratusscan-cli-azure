@@ -60,21 +60,21 @@ def _compute_findings(sheets: Dict[str, Any], cost_map: Dict[str, float]) -> Lis
     """Return list of finding dicts in priority order (most actionable first)."""
     findings: List[Dict[str, Any]] = []
 
-    f = _unattached_disks_finding(sheets.get("Disks"), cost_map)
-    if f:
-        findings.append(f)
-
-    f = _stopped_vms_finding(sheets.get("Stopped VMs"), cost_map)
-    if f:
-        findings.append(f)
-
-    f = _stale_snapshots_finding(sheets.get("Snapshots"), cost_map)
-    if f:
-        findings.append(f)
-
-    f = _idle_public_ips_finding(sheets.get("Public IPs"), cost_map)
-    if f:
-        findings.append(f)
+    candidates = [
+        (_unattached_disks_finding, "Disks"),
+        (_stopped_vms_finding, "Stopped VMs"),
+        (_empty_app_service_plans_finding, "App Service Plans"),
+        (_idle_app_gateways_finding, "Application Gateways"),
+        (_idle_load_balancers_finding, "Load Balancers"),
+        (_orphaned_nics_finding, "Network Interfaces"),
+        (_idle_public_ips_finding, "Public IPs"),
+        (_stale_snapshots_finding, "Snapshots"),
+        (_missing_hybrid_benefit_finding, "Virtual Machines"),
+    ]
+    for func, sheet_name in candidates:
+        f = func(sheets.get(sheet_name), cost_map)
+        if f:
+            findings.append(f)
 
     return findings
 
@@ -277,6 +277,262 @@ def _idle_public_ips_finding(df, cost_map):
         "rows": _top_rows(idle, ["subscriptionId", "resourceGroup", "name",
                                   "skuName", "ipAddress", "ageDays",
                                   "cost"], n=10),
+    }
+
+
+def _empty_app_service_plans_finding(df, cost_map):
+    if df is None or df.empty or "id" not in df.columns:
+        return None
+    if "numberOfSites" not in df.columns:
+        return None
+    df = df.copy()
+    df["numberOfSites"] = df["numberOfSites"].fillna(0)
+    empty = df[df["numberOfSites"] == 0].copy()
+    if empty.empty:
+        return None
+
+    empty["cost"] = empty["id"].astype(str).str.lower().map(cost_map).fillna(0.0)
+    _add_age_days(empty)
+    empty = empty.sort_values("cost", ascending=False)
+
+    return {
+        "name": "Empty App Service Plans",
+        "description": (
+            "App Service Plans with zero hosted sites still bill for the "
+            "provisioned tier and worker capacity. Pure waste unless the "
+            "plan is being held for an imminent deployment."
+        ),
+        "action": (
+            "Delete the plan, or downsize to the lowest tier if a site "
+            "deployment is genuinely imminent. Free/Shared tier plans "
+            "are exempt and may show $0 cost."
+        ),
+        "count": len(empty),
+        "total_cost": float(empty["cost"].sum()),
+        "max_age_days": _max_age(empty),
+        "columns": [
+            ("subscriptionId", "Subscription"),
+            ("resourceGroup", "Resource Group"),
+            ("name", "Plan"),
+            ("skuName", "SKU"),
+            ("skuTier", "Tier"),
+            ("numberOfWorkers", "Workers"),
+            ("ageDays", "Age (days)"),
+            ("cost", "Last month ($)"),
+        ],
+        "rows": _top_rows(empty, ["subscriptionId", "resourceGroup", "name",
+                                   "skuName", "skuTier", "numberOfWorkers",
+                                   "ageDays", "cost"], n=10),
+    }
+
+
+def _idle_app_gateways_finding(df, cost_map):
+    if df is None or df.empty or "id" not in df.columns:
+        return None
+    listeners = df.get("listenerCount")
+    rules = df.get("requestRoutingRuleCount")
+    if listeners is None or rules is None:
+        return None
+    idle = df[
+        (listeners.fillna(0) == 0) | (rules.fillna(0) == 0)
+    ].copy()
+    if idle.empty:
+        return None
+
+    idle["cost"] = idle["id"].astype(str).str.lower().map(cost_map).fillna(0.0)
+    _add_age_days(idle)
+    idle = idle.sort_values("cost", ascending=False)
+
+    return {
+        "name": "Idle Application Gateways",
+        "description": (
+            "Application Gateways with no listeners or no routing rules "
+            "cannot serve traffic. Standard_v2/WAF_v2 gateways bill a "
+            "fixed gateway fee plus per-capacity-unit per hour — one "
+            "idle gateway is typically hundreds of dollars per month."
+        ),
+        "action": (
+            "Delete the gateway, or finish configuration if it was "
+            "provisioned ahead of a deployment that stalled."
+        ),
+        "count": len(idle),
+        "total_cost": float(idle["cost"].sum()),
+        "max_age_days": _max_age(idle),
+        "columns": [
+            ("subscriptionId", "Subscription"),
+            ("resourceGroup", "Resource Group"),
+            ("name", "App Gateway"),
+            ("skuName", "SKU"),
+            ("listenerCount", "Listeners"),
+            ("requestRoutingRuleCount", "Rules"),
+            ("ageDays", "Age (days)"),
+            ("cost", "Last month ($)"),
+        ],
+        "rows": _top_rows(idle, ["subscriptionId", "resourceGroup", "name",
+                                  "skuName", "listenerCount",
+                                  "requestRoutingRuleCount", "ageDays",
+                                  "cost"], n=10),
+    }
+
+
+def _idle_load_balancers_finding(df, cost_map):
+    if df is None or df.empty or "id" not in df.columns:
+        return None
+    rules = df.get("loadBalancingRuleCount")
+    nat = df.get("inboundNatRuleCount")
+    outbound = df.get("outboundRuleCount")
+    sku = df.get("skuName")
+    if rules is None or sku is None:
+        return None
+    idle = df[
+        (rules.fillna(0) == 0)
+        & ((nat.fillna(0) if nat is not None else 0) == 0)
+        & ((outbound.fillna(0) if outbound is not None else 0) == 0)
+        & (sku.astype(str).str.lower() == "standard")
+    ].copy()
+    if idle.empty:
+        return None
+
+    idle["cost"] = idle["id"].astype(str).str.lower().map(cost_map).fillna(0.0)
+    _add_age_days(idle)
+    idle = idle.sort_values("cost", ascending=False)
+
+    return {
+        "name": "Idle Standard Load Balancers",
+        "description": (
+            "Standard SKU load balancers with no load balancing rules, "
+            "NAT rules, or outbound rules. Bill at the Standard SKU rate "
+            "regardless of traffic. Basic SKU LBs (free, deprecated) are "
+            "not flagged here."
+        ),
+        "action": (
+            "Delete the load balancer unless it's reserved for a planned "
+            "configuration. Reattach the backing public IP separately "
+            "if it needs to stay reserved."
+        ),
+        "count": len(idle),
+        "total_cost": float(idle["cost"].sum()),
+        "max_age_days": _max_age(idle),
+        "columns": [
+            ("subscriptionId", "Subscription"),
+            ("resourceGroup", "Resource Group"),
+            ("name", "Load Balancer"),
+            ("skuName", "SKU"),
+            ("backendPoolCount", "Backend Pools"),
+            ("ageDays", "Age (days)"),
+            ("cost", "Last month ($)"),
+        ],
+        "rows": _top_rows(idle, ["subscriptionId", "resourceGroup", "name",
+                                  "skuName", "backendPoolCount", "ageDays",
+                                  "cost"], n=10),
+    }
+
+
+def _orphaned_nics_finding(df, cost_map):
+    if df is None or df.empty or "id" not in df.columns:
+        return None
+    vm = df.get("vmId")
+    if vm is None:
+        return None
+    orphans = df[vm.isna() | (vm.astype(str).str.strip() == "")].copy()
+    if orphans.empty:
+        return None
+
+    orphans["cost"] = orphans["id"].astype(str).str.lower().map(cost_map).fillna(0.0)
+    _add_age_days(orphans)
+    orphans = orphans.sort_values("cost", ascending=False)
+
+    return {
+        "name": "Orphaned Network Interfaces",
+        "description": (
+            "NICs not attached to any VM. The NIC itself is free, but "
+            "associated public IPs continue to bill, and the clutter "
+            "indicates incomplete VM cleanups that may have left other "
+            "resources behind."
+        ),
+        "action": (
+            "Delete the NIC. If the NIC carries a static public IP that "
+            "must be preserved, detach the public IP first and reassign."
+        ),
+        "count": len(orphans),
+        "total_cost": float(orphans["cost"].sum()),
+        "max_age_days": _max_age(orphans),
+        "columns": [
+            ("subscriptionId", "Subscription"),
+            ("resourceGroup", "Resource Group"),
+            ("name", "NIC"),
+            ("privateIp", "Private IP"),
+            ("publicIpId", "Public IP"),
+            ("ageDays", "Age (days)"),
+            ("cost", "Last month ($)"),
+        ],
+        "rows": _top_rows(orphans, ["subscriptionId", "resourceGroup",
+                                     "name", "privateIp", "publicIpId",
+                                     "ageDays", "cost"], n=10),
+    }
+
+
+def _missing_hybrid_benefit_finding(df, cost_map):
+    """
+    Windows VMs that are running but do not have Azure Hybrid Benefit
+    applied. AHB cuts the Windows license portion of VM cost by up to
+    ~40%; eligible customers (Software Assurance, subscription licenses)
+    are leaving real money on the table here.
+    """
+    if df is None or df.empty or "id" not in df.columns:
+        return None
+    if "osType" not in df.columns or "licenseType" not in df.columns:
+        return None
+
+    os_type = df["osType"].astype(str).str.lower()
+    license_type = df["licenseType"].astype(str)
+    power = df.get("powerState", "").astype(str) if "powerState" in df.columns else None
+
+    is_windows = os_type == "windows"
+    has_ahb = license_type.isin(["Windows_Server", "Windows_Client"])
+    candidates = df[is_windows & ~has_ahb].copy()
+    if power is not None:
+        running = power.str.contains("running", case=False, na=False)
+        candidates = candidates[running.loc[candidates.index]]
+    if candidates.empty:
+        return None
+
+    candidates["cost"] = candidates["id"].astype(str).str.lower().map(cost_map).fillna(0.0)
+    _add_age_days(candidates)
+    candidates = candidates.sort_values("cost", ascending=False)
+
+    return {
+        "name": "Windows VMs Missing Azure Hybrid Benefit",
+        "description": (
+            "Running Windows VMs whose licenseType is not set to "
+            "Windows_Server or Windows_Client. If the customer has "
+            "eligible Windows Server licenses with active Software "
+            "Assurance, applying Hybrid Benefit removes the Windows "
+            "license cost from the VM rate — typically ~40% savings on "
+            "Windows VM compute. Linux VMs are not flagged here."
+        ),
+        "action": (
+            "Confirm the customer's license entitlement, then set "
+            "licenseType=Windows_Server (or Windows_Client for client "
+            "OS images) on each VM. No downtime required."
+        ),
+        "count": len(candidates),
+        "total_cost": float(candidates["cost"].sum()),
+        "max_age_days": _max_age(candidates),
+        "columns": [
+            ("subscriptionId", "Subscription"),
+            ("resourceGroup", "Resource Group"),
+            ("name", "VM"),
+            ("vmSize", "Size"),
+            ("osType", "OS"),
+            ("licenseType", "Current License"),
+            ("ageDays", "Age (days)"),
+            ("cost", "Last month ($)"),
+        ],
+        "rows": _top_rows(candidates, ["subscriptionId", "resourceGroup",
+                                        "name", "vmSize", "osType",
+                                        "licenseType", "ageDays", "cost"],
+                          n=10),
     }
 
 

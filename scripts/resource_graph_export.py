@@ -116,6 +116,7 @@ DEFAULT_QUERIES: List[Dict[str, str]] = [
             "provisioningState=tostring(properties.provisioningState), "
             "vmId=tostring(properties.vmId), "
             "identityType=tostring(identity.type), "
+            "timeCreated=tostring(properties.timeCreated), "
             "tags=tostring(tags), id"
         ),
     },
@@ -296,6 +297,7 @@ DEFAULT_QUERIES: List[Dict[str, str]] = [
             "hyperV=tobool(properties.hyperV), "
             "reserved=tobool(properties.reserved), "
             "zoneRedundant=tobool(properties.zoneRedundant), "
+            "timeCreated=tostring(properties.timeCreated), "
             "tags=tostring(tags), id"
         ),
     },
@@ -367,6 +369,7 @@ DEFAULT_QUERIES: List[Dict[str, str]] = [
             "enableAcceleratedNetworking=tobool(properties.enableAcceleratedNetworking), "
             "enableIPForwarding=tobool(properties.enableIPForwarding), "
             "vmId=tostring(properties.virtualMachine.id), "
+            "timeCreated=tostring(properties.timeCreated), "
             "tags=tostring(tags), id"
         ),
     },
@@ -414,6 +417,7 @@ DEFAULT_QUERIES: List[Dict[str, str]] = [
             "inboundNatRuleCount=array_length(properties.inboundNatRules), "
             "outboundRuleCount=array_length(properties.outboundRules), "
             "probeCount=array_length(properties.probes), "
+            "timeCreated=tostring(properties.timeCreated), "
             "tags=tostring(tags), id"
         ),
     },
@@ -454,6 +458,7 @@ DEFAULT_QUERIES: List[Dict[str, str]] = [
             "requestRoutingRuleCount=array_length(properties.requestRoutingRules), "
             "sslCertificateCount=array_length(properties.sslCertificates), "
             "zones=tostring(zones), "
+            "timeCreated=tostring(properties.timeCreated), "
             "tags=tostring(tags), id"
         ),
     },
