@@ -28,7 +28,7 @@ from sslib.cloud import arm_endpoint_for_cloud, arm_scope_for_cloud
 
 logger = logging.getLogger(__name__)
 
-_API_VERSION = "2023-11-01"
+_API_VERSION = "2021-10-01"
 
 DEFAULT_TIMEFRAME = "TheLastMonth"
 
@@ -148,7 +148,12 @@ def _query_subscription(
         assert resp is not None
         if resp.status_code == 403:
             raise _PermissionDenied(resp.text[:300])
-        resp.raise_for_status()
+        if resp.status_code >= 400:
+            raise requests.HTTPError(
+                f"{resp.status_code} {resp.reason} for {resp.url} — "
+                f"body: {resp.text[:600]}",
+                response=resp,
+            )
 
         result = resp.json()
         props = result.get("properties") or {}
