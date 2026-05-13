@@ -37,8 +37,8 @@ Dedicated sheets per resource type:
     SQL Databases, Cosmos DB Accounts, Storage Accounts, Storage Containers,
     Key Vaults
 
-  Governance:
-    Resource Locks
+  Governance / waste:
+    Resource Locks, Orphaned Resources
 
 A "Coverage Audit" sheet at the end groups every type present in the tenant
 and flags which ones only land in "All Resources" — i.e. where adding a
@@ -807,6 +807,29 @@ DEFAULT_QUERIES: List[Dict[str, str]] = [
             "| project subscriptionId, resourceGroup, name, "
             "level=tostring(properties.level), "
             "notes=tostring(properties.notes), id"
+        ),
+    },
+    {
+        "sheet": "Orphaned Resources",
+        "table": "Resources",
+        "query": (
+            "Resources "
+            "| where (type =~ 'microsoft.compute/disks' and (isempty(managedBy) or isnull(managedBy))) "
+            "    or (type =~ 'microsoft.network/publicipaddresses' and isnull(properties.ipConfiguration)) "
+            "    or (type =~ 'microsoft.network/networkinterfaces' and isnull(properties.virtualMachine)) "
+            "| project subscriptionId, resourceGroup, "
+            "resourceType = type, "
+            "name, location, "
+            "reason = case("
+            "    type =~ 'microsoft.compute/disks', 'Unattached disk', "
+            "    type =~ 'microsoft.network/publicipaddresses', 'Public IP not assigned', "
+            "    type =~ 'microsoft.network/networkinterfaces', 'NIC not attached to VM', "
+            "    ''), "
+            "costSignal = case("
+            "    type =~ 'microsoft.compute/disks', strcat(tostring(toint(properties.diskSizeGB)), ' GB ', tostring(sku.name)), "
+            "    type =~ 'microsoft.network/publicipaddresses', tostring(sku.name), "
+            "    ''), "
+            "tags=tostring(tags), id"
         ),
     },
     {
