@@ -22,9 +22,9 @@ Tables queried:
 Dedicated sheets per resource type:
 
   Compute / cost drivers:
-    Virtual Machines, VM Scale Sets, Disks, Snapshots, AKS Clusters,
-    AKS Node Pools, App Services, App Service Plans, Container Apps
-    Environments, Container Apps, Container Registries
+    Virtual Machines, Stopped VMs, VM Scale Sets, Disks, Snapshots,
+    AKS Clusters, AKS Node Pools, App Services, App Service Plans,
+    Container Apps Environments, Container Apps, Container Registries
 
   Network / topology:
     Network Interfaces, Public IPs, Network Security Groups, Load Balancers,
@@ -117,6 +117,27 @@ DEFAULT_QUERIES: List[Dict[str, str]] = [
             "vmId=tostring(properties.vmId), "
             "identityType=tostring(identity.type), "
             "tags=tostring(tags), id"
+        ),
+    },
+    {
+        "sheet": "Stopped VMs",
+        "table": "Resources",
+        "query": (
+            "Resources "
+            "| where type =~ 'microsoft.compute/virtualmachines' "
+            "| extend powerState = tostring(properties.extended.instanceView.powerState.code) "
+            "| where powerState contains 'deallocated' or powerState contains 'stopped' "
+            "| project subscriptionId, resourceGroup, name, location, "
+            "vmSize = tostring(properties.hardwareProfile.vmSize), "
+            "powerState, "
+            "osType = tostring(properties.storageProfile.osDisk.osType), "
+            "osDiskName = tostring(properties.storageProfile.osDisk.name), "
+            "osDiskSizeGB = toint(properties.storageProfile.osDisk.diskSizeGB), "
+            "osDiskType = tostring(properties.storageProfile.osDisk.managedDisk.storageAccountType), "
+            "osDiskId = tostring(properties.storageProfile.osDisk.managedDisk.id), "
+            "dataDiskCount = array_length(properties.storageProfile.dataDisks), "
+            "licenseType = tostring(properties.licenseType), "
+            "tags = tostring(tags), id"
         ),
     },
     {
@@ -1048,6 +1069,24 @@ def main() -> int:
             summary_rows.append(
                 {"Sheet": sheet, "Table": q["table"], "Rows": f"ERROR: {e}"}
             )
+
+    try:
+        from sslib.cost_management import get_cost_by_resource
+        print("  • Cost by Resource (CostManagement)...")
+        cost_map = get_cost_by_resource(credential, sub_ids)
+        if cost_map:
+            cost_df = pd.DataFrame(
+                [{"resourceId": rid, "cost": cost} for rid, cost in cost_map.items()]
+            )
+            sheets["Cost by Resource"] = cost_df
+        summary_rows.append(
+            {"Sheet": "Cost by Resource", "Table": "CostManagement", "Rows": len(cost_map)}
+        )
+    except Exception as e:
+        logger.error("Cost Management pull failed: %s", e)
+        summary_rows.append(
+            {"Sheet": "Cost by Resource", "Table": "CostManagement", "Rows": f"ERROR: {e}"}
+        )
 
     audit_df = _build_coverage_audit(sheets.get("All Resources"), pd)
 
