@@ -18,9 +18,10 @@ to keep error handling explicit per status code.
 
 from __future__ import annotations
 
+import datetime as _dt
 import logging
 import time
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import requests
 
@@ -30,13 +31,30 @@ logger = logging.getLogger(__name__)
 
 _API_VERSION = "2021-10-01"
 
-DEFAULT_TIMEFRAME = "TheLastMonth"
+
+def _last_full_month_range() -> Tuple[str, str]:
+    """
+    Return (from, to) ISO 8601 strings spanning the previous calendar month
+    in UTC. Used with Cost Management's timeframe=Custom — the only
+    timeframe value supported in every cloud (TheLastMonth is rejected in
+    Azure US Government with InvalidQueryDefinition).
+    """
+    today = _dt.datetime.utcnow().date()
+    first_this = today.replace(day=1)
+    last_prev = first_this - _dt.timedelta(days=1)
+    first_prev = last_prev.replace(day=1)
+    return (
+        f"{first_prev.isoformat()}T00:00:00Z",
+        f"{last_prev.isoformat()}T23:59:59Z",
+    )
 
 
-def _build_body(timeframe: str) -> dict:
+def _build_body() -> dict:
+    period_from, period_to = _last_full_month_range()
     return {
         "type": "ActualCost",
-        "timeframe": timeframe,
+        "timeframe": "Custom",
+        "timePeriod": {"from": period_from, "to": period_to},
         "dataset": {
             "granularity": "None",
             "aggregation": {"totalCost": {"name": "Cost", "function": "Sum"}},
@@ -52,13 +70,13 @@ class _PermissionDenied(Exception):
 def get_cost_by_resource(
     credential,
     subscription_ids: List[str],
-    timeframe: str = DEFAULT_TIMEFRAME,
 ) -> Dict[str, float]:
     """
     Query Cost Management for actual costs grouped by ResourceId across the
-    given subscriptions. Returns {resource_id_lower: cost} aggregated across
-    all subscriptions. Currency is assumed consistent within a tenant; the
-    Currency column is not surfaced.
+    given subscriptions, covering the previous full calendar month.
+    Returns {resource_id_lower: cost} aggregated across all subscriptions.
+    Currency is assumed consistent within a tenant; the Currency column is
+    not surfaced.
 
     Subscriptions where the identity lacks Cost Management Reader role are
     skipped with a logged warning; the rest still return. An empty dict
@@ -67,6 +85,7 @@ def get_cost_by_resource(
     """
     base_url = arm_endpoint_for_cloud()
     scope = arm_scope_for_cloud()
+    body = _build_body()
 
     costs: Dict[str, float] = {}
     denied: List[str] = []
@@ -74,7 +93,7 @@ def get_cost_by_resource(
 
     for sub_id in subscription_ids:
         try:
-            sub_costs = _query_subscription(credential, base_url, scope, sub_id, timeframe)
+            sub_costs = _query_subscription(credential, base_url, scope, sub_id, body)
             costs.update(sub_costs)
             ok += 1
         except _PermissionDenied:
@@ -100,7 +119,7 @@ def _query_subscription(
     base_url: str,
     scope: str,
     sub_id: str,
-    timeframe: str,
+    body: dict,
 ) -> Dict[str, float]:
     """
     Query Cost Management for a single subscription, paginating via
@@ -111,7 +130,6 @@ def _query_subscription(
         f"{base_url}/subscriptions/{sub_id}/providers/Microsoft.CostManagement/query"
         f"?api-version={_API_VERSION}"
     )
-    body = _build_body(timeframe)
     costs: Dict[str, float] = {}
 
     while url:
