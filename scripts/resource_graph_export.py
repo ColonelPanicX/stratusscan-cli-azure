@@ -27,11 +27,12 @@ Dedicated sheets per resource type:
     Environments, Container Apps, Container Registries
 
   Network / topology:
-    Network Interfaces, Public IPs, Network Security Groups, Load Balancers,
-    LB Backend Members, Application Gateways, VNet Gateways, VPN Connections,
-    Local Network Gateways, ExpressRoute Circuits, Virtual WANs, Virtual Hubs,
-    Azure Firewalls, Bastion Hosts, NAT Gateways, Route Tables, Routes,
-    Private Endpoints, DNS Zones, Private DNS VNet Links, Subnets, VNet Peerings
+    Network Interfaces, Public IPs, Network Security Groups, NSG Rules,
+    Load Balancers, LB Backend Members, Application Gateways, VNet Gateways,
+    VPN Connections, Local Network Gateways, ExpressRoute Circuits, Virtual
+    WANs, Virtual Hubs, Azure Firewalls, Bastion Hosts, NAT Gateways, Route
+    Tables, Routes, Private Endpoints, DNS Zones, Private DNS VNet Links,
+    Subnets, VNet Peerings
 
   Data:
     SQL Databases, Cosmos DB Accounts, Storage Accounts, Storage Containers,
@@ -375,6 +376,56 @@ DEFAULT_QUERIES: List[Dict[str, str]] = [
             "associatedNicCount=array_length(properties.networkInterfaces), "
             "flowLogCount=array_length(properties.flowLogs), "
             "tags=tostring(tags), id"
+        ),
+    },
+    {
+        "sheet": "NSG Rules",
+        "table": "Resources",
+        "query": (
+            "Resources | where type =~ 'microsoft.network/networksecuritygroups' "
+            "| mv-expand rule = properties.securityRules "
+            "| extend ruleType = 'Custom' "
+            "| project subscriptionId, resourceGroup, nsgName=name, location, ruleType, "
+            "ruleName=tostring(rule.name), "
+            "priority=toint(rule.properties.priority), "
+            "direction=tostring(rule.properties.direction), "
+            "access=tostring(rule.properties.access), "
+            "protocol=tostring(rule.properties.protocol), "
+            "sourceAddressPrefix=tostring(rule.properties.sourceAddressPrefix), "
+            "sourceAddressPrefixes=tostring(rule.properties.sourceAddressPrefixes), "
+            "sourcePortRange=tostring(rule.properties.sourcePortRange), "
+            "sourcePortRanges=tostring(rule.properties.sourcePortRanges), "
+            "destinationAddressPrefix=tostring(rule.properties.destinationAddressPrefix), "
+            "destinationAddressPrefixes=tostring(rule.properties.destinationAddressPrefixes), "
+            "destinationPortRange=tostring(rule.properties.destinationPortRange), "
+            "destinationPortRanges=tostring(rule.properties.destinationPortRanges), "
+            "description=tostring(rule.properties.description), "
+            "sourceAppSecGroups=tostring(rule.properties.sourceApplicationSecurityGroups), "
+            "destinationAppSecGroups=tostring(rule.properties.destinationApplicationSecurityGroups), "
+            "id=strcat(id, '/securityRules/', tostring(rule.name)) "
+            "| union ("
+            "Resources | where type =~ 'microsoft.network/networksecuritygroups' "
+            "| mv-expand rule = properties.defaultSecurityRules "
+            "| extend ruleType = 'Default' "
+            "| project subscriptionId, resourceGroup, nsgName=name, location, ruleType, "
+            "ruleName=tostring(rule.name), "
+            "priority=toint(rule.properties.priority), "
+            "direction=tostring(rule.properties.direction), "
+            "access=tostring(rule.properties.access), "
+            "protocol=tostring(rule.properties.protocol), "
+            "sourceAddressPrefix=tostring(rule.properties.sourceAddressPrefix), "
+            "sourceAddressPrefixes=tostring(rule.properties.sourceAddressPrefixes), "
+            "sourcePortRange=tostring(rule.properties.sourcePortRange), "
+            "sourcePortRanges=tostring(rule.properties.sourcePortRanges), "
+            "destinationAddressPrefix=tostring(rule.properties.destinationAddressPrefix), "
+            "destinationAddressPrefixes=tostring(rule.properties.destinationAddressPrefixes), "
+            "destinationPortRange=tostring(rule.properties.destinationPortRange), "
+            "destinationPortRanges=tostring(rule.properties.destinationPortRanges), "
+            "description=tostring(rule.properties.description), "
+            "sourceAppSecGroups=tostring(rule.properties.sourceApplicationSecurityGroups), "
+            "destinationAppSecGroups=tostring(rule.properties.destinationApplicationSecurityGroups), "
+            "id=strcat(id, '/securityRules/', tostring(rule.name))"
+            ")"
         ),
     },
     {
