@@ -137,6 +137,7 @@ DEFAULT_QUERIES: List[Dict[str, str]] = [
             "osDiskId = tostring(properties.storageProfile.osDisk.managedDisk.id), "
             "dataDiskCount = array_length(properties.storageProfile.dataDisks), "
             "licenseType = tostring(properties.licenseType), "
+            "timeCreated = tostring(properties.timeCreated), "
             "tags = tostring(tags), id"
         ),
     },
@@ -179,6 +180,7 @@ DEFAULT_QUERIES: List[Dict[str, str]] = [
             "networkAccessPolicy=tostring(properties.networkAccessPolicy), "
             "publicNetworkAccess=tostring(properties.publicNetworkAccess), "
             "managedBy=tostring(managedBy), "
+            "timeCreated=tostring(properties.timeCreated), "
             "tags=tostring(tags), id"
         ),
     },
@@ -381,6 +383,7 @@ DEFAULT_QUERIES: List[Dict[str, str]] = [
             "associatedTo=tostring(properties.ipConfiguration.id), "
             "fqdn=tostring(properties.dnsSettings.fqdn), "
             "idleTimeoutInMinutes=toint(properties.idleTimeoutInMinutes), "
+            "timeCreated=tostring(properties.timeCreated), "
             "tags=tostring(tags), id"
         ),
     },

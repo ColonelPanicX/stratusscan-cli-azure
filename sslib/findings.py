@@ -75,7 +75,6 @@ def _compute_findings(sheets: Dict[str, Any], cost_map: Dict[str, float]) -> Lis
 def _unattached_disks_finding(df, cost_map):
     if df is None or df.empty or "id" not in df.columns:
         return None
-    import pandas as pd
 
     mb = df.get("managedBy")
     if mb is None:
@@ -85,6 +84,7 @@ def _unattached_disks_finding(df, cost_map):
         return None
 
     orphans["cost"] = orphans["id"].astype(str).str.lower().map(cost_map).fillna(0.0)
+    _add_age_days(orphans)
     orphans = orphans.sort_values("cost", ascending=False)
 
     total_size = int(orphans["diskSizeGB"].fillna(0).sum()) if "diskSizeGB" in orphans.columns else 0
@@ -92,7 +92,10 @@ def _unattached_disks_finding(df, cost_map):
         "name": "Unattached Disks",
         "description": (
             "Managed disks not attached to any VM. Billed at the full "
-            "provisioned rate every month regardless of use."
+            "provisioned rate every month regardless of use. The Age "
+            "column is days since the disk was created — an upper bound "
+            "on \"days unused\" since Azure does not expose a "
+            "last-detached timestamp via Resource Graph."
         ),
         "action": (
             "Review with the resource owner. Convert to a snapshot first if "
@@ -101,16 +104,19 @@ def _unattached_disks_finding(df, cost_map):
         "count": len(orphans),
         "total_size_gb": total_size,
         "total_cost": float(orphans["cost"].sum()),
+        "max_age_days": _max_age(orphans),
         "columns": [
             ("subscriptionId", "Subscription"),
             ("resourceGroup", "Resource Group"),
             ("name", "Disk"),
             ("diskSizeGB", "Size (GB)"),
             ("skuName", "SKU"),
+            ("ageDays", "Age (days)"),
             ("cost", "Last month ($)"),
         ],
         "rows": _top_rows(orphans, ["subscriptionId", "resourceGroup", "name",
-                                     "diskSizeGB", "skuName", "cost"], n=10),
+                                     "diskSizeGB", "skuName", "ageDays",
+                                     "cost"], n=10),
     }
 
 
@@ -124,6 +130,7 @@ def _stopped_vms_finding(df, cost_map):
     else:
         df["os_disk_cost"] = 0.0
     df["cost"] = df["vm_cost"] + df["os_disk_cost"]
+    _add_age_days(df)
     df = df.sort_values("cost", ascending=False)
 
     return {
@@ -132,7 +139,11 @@ def _stopped_vms_finding(df, cost_map):
             "Deallocated VMs do not bill for compute, but their attached "
             "OS and data disks continue to bill at the provisioned rate. "
             "The Cost ($) column shows the VM + OS disk cost; data disks "
-            "(not joined here) add further to the actual waste."
+            "(not joined here) add further to the actual waste. The Age "
+            "column is days since the VM was created — Resource Graph "
+            "does not expose a reliable last-deallocated timestamp, so "
+            "use this as the VM lifecycle reference rather than \"how "
+            "long it has been stopped\"."
         ),
         "action": (
             "If retained for fast restart, accept the disk cost. Otherwise "
@@ -141,6 +152,7 @@ def _stopped_vms_finding(df, cost_map):
         ),
         "count": len(df),
         "total_cost": float(df["cost"].sum()),
+        "max_age_days": _max_age(df),
         "columns": [
             ("subscriptionId", "Subscription"),
             ("resourceGroup", "Resource Group"),
@@ -149,11 +161,12 @@ def _stopped_vms_finding(df, cost_map):
             ("powerState", "Power State"),
             ("osDiskSizeGB", "OS Disk (GB)"),
             ("dataDiskCount", "Data Disks"),
+            ("ageDays", "Age (days)"),
             ("cost", "Last month ($)"),
         ],
         "rows": _top_rows(df, ["subscriptionId", "resourceGroup", "name",
                                 "vmSize", "powerState", "osDiskSizeGB",
-                                "dataDiskCount", "cost"], n=10),
+                                "dataDiskCount", "ageDays", "cost"], n=10),
     }
 
 
@@ -176,11 +189,14 @@ def _stale_snapshots_finding(df, cost_map):
     stale = stale.sort_values("cost", ascending=False)
 
     total_size = int(stale["diskSizeGB"].fillna(0).sum()) if "diskSizeGB" in stale.columns else 0
+    max_age = int(stale["ageInDays"].fillna(0).max()) if "ageInDays" in stale.columns else None
     return {
         "name": "Stale Snapshots (>90 days old)",
         "description": (
             "Snapshots older than 90 days. Most are one-off backups taken "
-            "for migrations or test rollbacks that were never cleaned up."
+            "for migrations or test rollbacks that were never cleaned up. "
+            "The Age column here is exact — derived from the snapshot's "
+            "creation timestamp."
         ),
         "action": (
             "Review with the resource owner; if unrecognised, delete. "
@@ -190,6 +206,7 @@ def _stale_snapshots_finding(df, cost_map):
         "count": len(stale),
         "total_size_gb": total_size,
         "total_cost": float(stale["cost"].sum()),
+        "max_age_days": max_age,
         "columns": [
             ("subscriptionId", "Subscription"),
             ("resourceGroup", "Resource Group"),
@@ -221,6 +238,7 @@ def _idle_public_ips_finding(df, cost_map):
         return None
 
     idle["cost"] = idle["id"].astype(str).str.lower().map(cost_map).fillna(0.0)
+    _add_age_days(idle)
     idle = idle.sort_values("cost", ascending=False)
 
     return {
@@ -228,7 +246,9 @@ def _idle_public_ips_finding(df, cost_map):
         "description": (
             "Standard SKU public IP addresses not associated with any "
             "resource. Bill at the idle rate (Basic SKU IPs, not shown, "
-            "are free when idle)."
+            "are free when idle). The Age column is days since the IP "
+            "was created — an upper bound on \"days unused\" since "
+            "Resource Graph does not expose a last-disassociated time."
         ),
         "action": (
             "Delete unless explicitly reserved for a planned reattach. "
@@ -237,16 +257,19 @@ def _idle_public_ips_finding(df, cost_map):
         ),
         "count": len(idle),
         "total_cost": float(idle["cost"].sum()),
+        "max_age_days": _max_age(idle),
         "columns": [
             ("subscriptionId", "Subscription"),
             ("resourceGroup", "Resource Group"),
             ("name", "Public IP"),
             ("skuName", "SKU"),
             ("ipAddress", "IP"),
+            ("ageDays", "Age (days)"),
             ("cost", "Last month ($)"),
         ],
         "rows": _top_rows(idle, ["subscriptionId", "resourceGroup", "name",
-                                  "skuName", "ipAddress", "cost"], n=10),
+                                  "skuName", "ipAddress", "ageDays",
+                                  "cost"], n=10),
     }
 
 
@@ -254,6 +277,31 @@ def _top_rows(df, columns: List[str], n: int = 10) -> List[Dict[str, Any]]:
     available = [c for c in columns if c in df.columns]
     out = df.head(n)[available].fillna("").to_dict(orient="records")
     return out
+
+
+def _add_age_days(df, time_col: str = "timeCreated") -> None:
+    """In-place: add ageDays column (int) computed from timeCreated."""
+    import pandas as pd
+
+    if time_col not in df.columns:
+        df["ageDays"] = pd.NA
+        return
+    ts = pd.to_datetime(df[time_col], errors="coerce", utc=True)
+    now = pd.Timestamp.utcnow()
+    df["ageDays"] = ((now - ts).dt.days).fillna(0).astype(int)
+
+
+def _max_age(df, age_col: str = "ageDays") -> Optional[int]:
+    if age_col not in df.columns:
+        return None
+    try:
+        m = df[age_col].max()
+        if m is None:
+            return None
+        m = int(m)
+        return m if m > 0 else None
+    except (TypeError, ValueError):
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -423,6 +471,8 @@ def _render_finding(f: Dict[str, Any]) -> str:
     meta_parts = [f"{f['count']:,} resource(s) flagged"]
     if f.get("total_size_gb"):
         meta_parts.append(f"{f['total_size_gb']:,} GB total")
+    if f.get("max_age_days"):
+        meta_parts.append(f"oldest {f['max_age_days']:,} days")
     meta = " · ".join(meta_parts)
 
     return f"""
