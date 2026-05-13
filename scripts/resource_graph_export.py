@@ -38,7 +38,8 @@ Dedicated sheets per resource type:
     Key Vaults
 
   Governance / waste:
-    Resource Locks, Orphaned Resources
+    Resource Locks, Orphaned Resources, Stale Snapshots, Tag Coverage,
+    Untagged Resources
 
 A "Coverage Audit" sheet at the end groups every type present in the tenant
 and flags which ones only land in "All Resources" — i.e. where adding a
@@ -830,6 +831,46 @@ DEFAULT_QUERIES: List[Dict[str, str]] = [
             "    type =~ 'microsoft.network/publicipaddresses', tostring(sku.name), "
             "    ''), "
             "tags=tostring(tags), id"
+        ),
+    },
+    {
+        "sheet": "Stale Snapshots",
+        "table": "Resources",
+        "query": (
+            "Resources "
+            "| where type =~ 'microsoft.compute/snapshots' "
+            "| extend ageInDays = toint(datetime_diff('day', now(), todatetime(properties.timeCreated))) "
+            "| where ageInDays > 90 "
+            "| project subscriptionId, resourceGroup, name, location, "
+            "diskSizeGB = toint(properties.diskSizeGB), "
+            "skuName = tostring(sku.name), "
+            "timeCreated = tostring(properties.timeCreated), "
+            "ageInDays, "
+            "incremental = tobool(properties.incremental), "
+            "osType = tostring(properties.osType), "
+            "sourceResourceId = tostring(properties.creationData.sourceResourceId), "
+            "tags=tostring(tags), id"
+        ),
+    },
+    {
+        "sheet": "Tag Coverage",
+        "table": "Resources",
+        "query": (
+            "Resources "
+            "| extend tagsObj = parse_json(tostring(tags)) "
+            "| mv-expand kv = bag_keys(tagsObj) "
+            "| summarize resourceCount = count() by tagKey = tostring(kv) "
+            "| extend totalResources = toscalar(Resources | summarize count()) "
+            "| extend coveragePercent = round(100.0 * toreal(resourceCount) / toreal(totalResources), 1)"
+        ),
+    },
+    {
+        "sheet": "Untagged Resources",
+        "table": "Resources",
+        "query": (
+            "Resources "
+            "| where isnull(tags) or tostring(tags) == '' or tostring(tags) == '{}' "
+            "| project subscriptionId, resourceGroup, name, type, location, id"
         ),
     },
     {
