@@ -857,11 +857,8 @@ DEFAULT_QUERIES: List[Dict[str, str]] = [
         "table": "Resources",
         "query": (
             "Resources "
-            "| extend tagsObj = parse_json(tostring(tags)) "
-            "| mv-expand kv = bag_keys(tagsObj) "
-            "| summarize resourceCount = count() by tagKey = tostring(kv) "
-            "| extend totalResources = toscalar(Resources | summarize count()) "
-            "| extend coveragePercent = round(100.0 * toreal(resourceCount) / toreal(totalResources), 1)"
+            "| mv-expand kv = bag_keys(tags) "
+            "| summarize resourceCount = count() by tagKey = tostring(kv)"
         ),
     },
     {
