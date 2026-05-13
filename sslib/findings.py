@@ -28,6 +28,7 @@ def build_cost_findings_html(
     scope_label: str,
     cloud_name: str,
     coverage_period: Optional[str] = None,
+    subscriptions: Optional[List[Dict[str, str]]] = None,
 ) -> str:
     """
     Build a self-contained HTML cost findings report.
@@ -39,9 +40,15 @@ def build_cost_findings_html(
     cloud_name: e.g. "AzureCloud" or "AzureUSGovernment".
     coverage_period: human-readable string for the cost coverage window;
         if omitted, derived from cost_management's last-full-month.
+    subscriptions: list of {"id": "<sub-uuid>", "name": "<friendly>"} dicts
+        for every subscription included in this scan. Renders an expandable
+        scope list in the report header so the customer can see exactly
+        what was covered.
     """
     findings = _compute_findings(sheets, cost_map)
-    return _render_html(findings, scope_label, cloud_name, cost_map, coverage_period)
+    return _render_html(
+        findings, scope_label, cloud_name, cost_map, coverage_period, subscriptions,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -435,6 +442,47 @@ td.cost { text-align: right; font-variant-numeric: tabular-nums; font-weight: 60
     border-radius: 3px;
     font-size: 0.85em;
 }
+.scope {
+    margin: 0.5rem 0 1.5rem;
+    font-size: 0.9rem;
+}
+.scope summary {
+    cursor: pointer;
+    color: #2c3e50;
+    font-weight: 600;
+    padding: 0.4rem 0.6rem;
+    background: #f0f3f7;
+    border-radius: 4px;
+    display: inline-block;
+    user-select: none;
+}
+.scope summary:hover { background: #e6ebf2; }
+.scope[open] summary { margin-bottom: 0.5rem; }
+.scope ul {
+    list-style: none;
+    padding: 0.5rem 0.75rem;
+    margin: 0;
+    background: white;
+    border: 1px solid #e2e5e9;
+    border-radius: 4px;
+    max-height: 320px;
+    overflow-y: auto;
+    columns: 1;
+}
+@media (min-width: 700px) {
+    .scope ul { columns: 2; column-gap: 1.5rem; }
+}
+.scope li {
+    padding: 0.25rem 0;
+    font-size: 0.875rem;
+    break-inside: avoid;
+}
+.scope .sub-id {
+    color: #7a8290;
+    font-size: 0.75rem;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    margin-left: 0.5rem;
+}
 """
 
 
@@ -498,6 +546,7 @@ def _render_html(
     cloud_name: str,
     cost_map: Dict[str, float],
     coverage_period: Optional[str],
+    subscriptions: Optional[List[Dict[str, str]]] = None,
 ) -> str:
     total_cost = sum(f["total_cost"] for f in findings)
     total_count = sum(f["count"] for f in findings)
@@ -506,6 +555,22 @@ def _render_html(
 
     period = coverage_period or _default_period_label()
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+    sub_count = len(subscriptions) if subscriptions else 0
+    if subscriptions:
+        items = "\n".join(
+            f'<li>{html.escape(s.get("name") or s.get("id") or "")}'
+            f'<span class="sub-id">{html.escape(s.get("id", ""))}</span></li>'
+            for s in subscriptions
+        )
+        scope_html = (
+            f'<details class="scope">'
+            f'<summary>Scope: {sub_count:,} subscription'
+            f"{'s' if sub_count != 1 else ''} — click to expand</summary>"
+            f"<ul>{items}</ul></details>"
+        )
+    else:
+        scope_html = ""
 
     if findings:
         findings_html = "\n".join(_render_finding(f) for f in findings)
@@ -534,6 +599,7 @@ def _render_html(
     Coverage period: <strong>{html.escape(period)}</strong> ·
     Generated: {html.escape(generated)}
   </div>
+  {scope_html}
 
   <div class="card">
     <h2>Executive Summary</h2>

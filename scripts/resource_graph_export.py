@@ -57,7 +57,7 @@ if str(_root) not in sys.path:
 
 from sslib.auth import get_credential, quiet_azure_loggers
 from sslib.cloud import arm_client_kwargs, detect_cloud
-from sslib.config import load_config, resolve_scope_label
+from sslib.config import get_subscription_label, load_config, resolve_scope_label
 from sslib.output import make_filename, save_dataframes, snapshot_metadata
 from sslib.subscriptions import filter_subscription_ids, list_subscriptions
 
@@ -1112,11 +1112,22 @@ def main() -> int:
         from sslib.findings import build_cost_findings_html
         html_path = path.with_suffix(".html")
         cloud = detect_cloud()
+        sub_name_by_id = {s["id"]: s.get("name", "") for s in subs}
+        subscription_info = [
+            {
+                "id": sid,
+                "name": get_subscription_label(
+                    config, sid, sub_name_by_id.get(sid, sid)
+                ),
+            }
+            for sid in sub_ids
+        ]
         html = build_cost_findings_html(
             {k: v for k, v in sheets.items() if hasattr(v, "empty")},
             cost_map,
             scope_label=scope_label,
             cloud_name=cloud.get("name", ""),
+            subscriptions=subscription_info,
         )
         html_path.write_text(html, encoding="utf-8")
         print(f"Wrote: {html_path}")
