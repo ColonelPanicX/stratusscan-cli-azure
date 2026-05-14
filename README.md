@@ -51,7 +51,7 @@ cd stratusscan-cli-azure
 
 # Install dependencies
 pip install azure-identity azure-mgmt-resource azure-mgmt-compute azure-mgmt-network \
-    azure-mgmt-storage azure-mgmt-keyvault azure-mgmt-authorization \
+    azure-mgmt-resourcegraph azure-mgmt-storage azure-mgmt-keyvault azure-mgmt-authorization \
     azure-mgmt-containerservice azure-mgmt-web azure-mgmt-sql azure-mgmt-cosmosdb \
     pandas openpyxl python-dateutil questionary
 
@@ -179,7 +179,7 @@ python scripts/security/role_assignments_export.py
 | `managed_disks_export.py` | Managed Disks |
 | `virtual_networks_export.py` | Virtual Networks (VNets) |
 | `subnets_export.py` | Subnets |
-| `network_security_groups_export.py` | Network Security Groups |
+| `network_security_groups_export.py` | Network Security Groups and flattened rules |
 | `public_ips_export.py` | Public IP Addresses |
 | `storage_accounts_export.py` | Storage Accounts |
 | `key_vault_export.py` | Key Vault |
@@ -240,7 +240,7 @@ A purpose-built read-only custom role definition will be provided in `policies/`
 **Missing dependencies**
 ```bash
 pip install azure-identity azure-mgmt-resource azure-mgmt-compute azure-mgmt-network \
-    azure-mgmt-storage azure-mgmt-keyvault azure-mgmt-authorization \
+    azure-mgmt-resourcegraph azure-mgmt-storage azure-mgmt-keyvault azure-mgmt-authorization \
     azure-mgmt-containerservice azure-mgmt-web azure-mgmt-sql azure-mgmt-cosmosdb \
     pandas openpyxl
 ```

@@ -359,6 +359,7 @@ def _get_credential():
 _CLIENT_MAP: Dict[str, tuple] = {
     "subscription": ("azure.mgmt.resource", "SubscriptionClient", False),
     "resource": ("azure.mgmt.resource", "ResourceManagementClient", True),
+    "resourcegraph": ("azure.mgmt.resourcegraph", "ResourceGraphClient", False),
     "compute": ("azure.mgmt.compute", "ComputeManagementClient", True),
     "network": ("azure.mgmt.network", "NetworkManagementClient", True),
     "storage": ("azure.mgmt.storage", "StorageManagementClient", True),
@@ -410,6 +411,8 @@ def get_azure_client(service_name: str, subscription_id: Optional[str] = None) -
     kwargs: Dict[str, Any] = {}
     if environment == "government":
         kwargs["base_url"] = _GOV_BASE_URL
+        if key == "resourcegraph":
+            kwargs["credential_scopes"] = [f"{_GOV_BASE_URL}/.default"]
 
     if needs_sub:
         return cls(cred, subscription_id, **kwargs)

@@ -24,7 +24,7 @@ cd stratusscan-cli-azure
 
 # Install runtime dependencies
 pip install azure-identity azure-mgmt-resource azure-mgmt-compute azure-mgmt-network \
-    azure-mgmt-storage azure-mgmt-keyvault azure-mgmt-authorization \
+    azure-mgmt-resourcegraph azure-mgmt-storage azure-mgmt-keyvault azure-mgmt-authorization \
     azure-mgmt-containerservice azure-mgmt-web azure-mgmt-sql azure-mgmt-cosmosdb \
     pandas openpyxl python-dateutil questionary
 
