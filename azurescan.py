@@ -66,6 +66,7 @@ TIER2_EXPORTERS = [
 
 GOVERNANCE_EXPORTERS = [
     ("Azure Policy Assignments",       "governance/policy_assignments_export.py"),
+    ("Management Groups",              "governance/management_groups_export.py"),
 ]
 
 
@@ -221,7 +222,7 @@ def menu_main(sub_id: str, sub_name: str) -> None:
         options = [
             "Tier 1 Exporters   (Core infrastructure: VMs, VNets, Storage, Key Vault, RBAC…)",
             "Tier 2 Exporters   (Workloads: AKS, App Service, SQL, Cosmos DB, Gateways…)",
-            "Governance          (Azure Policy, Defender, Advisor…)",
+            "Governance          (Policy, Management Groups, Defender, Advisor…)",
             "Run All Exporters   (Tier 1 + Tier 2 + Governance)",
             "Configure           (subscription selection, environment settings)",
         ]
