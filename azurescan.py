@@ -68,6 +68,7 @@ GOVERNANCE_EXPORTERS = [
     ("Azure Policy Assignments",       "governance/policy_assignments_export.py"),
     ("Management Groups",              "governance/management_groups_export.py"),
     ("Defender Secure Scores & Plans", "security/defender_scores_export.py"),
+    ("Defender Assessments",           "security/defender_assessments_export.py"),
 ]
 
 
