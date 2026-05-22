@@ -368,6 +368,7 @@ _CLIENT_MAP: Dict[str, tuple] = {
     "web": ("azure.mgmt.web", "WebSiteManagementClient", True),
     "sql": ("azure.mgmt.sql", "SqlManagementClient", True),
     "cosmosdb": ("azure.mgmt.cosmosdb", "CosmosDBManagementClient", True),
+    "managementgroups": ("azure.mgmt.managementgroups", "ManagementGroupsAPI", False),
 }
 
 # Government cloud base URL override
