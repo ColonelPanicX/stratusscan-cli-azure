@@ -59,6 +59,7 @@ TIER2_EXPORTERS = [
     ("Load Balancers",                 "network/load_balancers_export.py"),
     ("Application Gateways",           "network/application_gateway_export.py"),
     ("Azure Firewalls",                "network/azure_firewall_export.py"),
+    ("Firewall Policy Rules",          "network/firewall_policy_rules_export.py"),
     ("Route Tables",                   "network/route_tables_export.py"),
     ("VNet Peerings",                  "network/vnet_peerings_export.py"),
 ]
