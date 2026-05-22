@@ -372,6 +372,7 @@ _CLIENT_MAP: Dict[str, tuple] = {
     "managementgroups": ("azure.mgmt.managementgroups", "ManagementGroupsAPI", False),
     "security": ("azure.mgmt.security", "SecurityCenter", True),
     "advisor": ("azure.mgmt.advisor", "AdvisorManagementClient", True),
+    "monitor": ("azure.mgmt.monitor", "MonitorManagementClient", True),
 }
 
 # Government cloud base URL override
