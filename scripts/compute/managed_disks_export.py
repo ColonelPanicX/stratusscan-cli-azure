@@ -67,6 +67,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
             "State": str(disk.disk_state) if disk.disk_state else "",
             "Encryption": _encryption_type(disk),
             "Attached VM": _attached_vm(disk),
+            "Orphaned": "Yes" if not disk.managed_by else "No",
             "Zones": ", ".join(disk.zones) if disk.zones else "",
             "Tags": "; ".join(f"{k}={v}" for k, v in tags.items()),
         })
