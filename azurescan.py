@@ -63,6 +63,10 @@ TIER2_EXPORTERS = [
     ("VNet Peerings",                  "network/vnet_peerings_export.py"),
 ]
 
+GOVERNANCE_EXPORTERS = [
+    ("Azure Policy Assignments",       "governance/policy_assignments_export.py"),
+]
+
 
 # ---------------------------------------------------------------------------
 # Subscription resolution
@@ -189,14 +193,36 @@ def menu_tier2(sub_id: str, sub_name: str) -> None:
             _run_exporter(path, sub_id, sub_name)
 
 
+def menu_governance(sub_id: str, sub_name: str) -> None:
+    while True:
+        options = [label for label, _ in GOVERNANCE_EXPORTERS] + ["Run All Governance Exporters"]
+        choice = utils.prompt_menu(
+            f"GOVERNANCE EXPORTERS  ({sub_name})",
+            options,
+            allow_back=True,
+            allow_exit=True,
+        )
+        if choice == "back":
+            return
+        if choice == "exit":
+            sys.exit(0)
+        if choice == len(options):
+            _run_all_exporters(GOVERNANCE_EXPORTERS, sub_id, sub_name)
+        else:
+            label, path = GOVERNANCE_EXPORTERS[choice - 1]
+            print(f"\nRunning: {label}")
+            _run_exporter(path, sub_id, sub_name)
+
+
 def menu_main(sub_id: str, sub_name: str) -> None:
     _print_banner()
     while True:
         options = [
-            "Tier 1 Exporters  (Core infrastructure: VMs, VNets, Storage, Key Vault, RBAC…)",
-            "Tier 2 Exporters  (Workloads: AKS, App Service, SQL, Cosmos DB, Gateways…)",
-            "Run All Exporters  (Tier 1 + Tier 2)",
-            "Configure          (subscription selection, environment settings)",
+            "Tier 1 Exporters   (Core infrastructure: VMs, VNets, Storage, Key Vault, RBAC…)",
+            "Tier 2 Exporters   (Workloads: AKS, App Service, SQL, Cosmos DB, Gateways…)",
+            "Governance          (Azure Policy, Defender, Advisor…)",
+            "Run All Exporters   (Tier 1 + Tier 2 + Governance)",
+            "Configure           (subscription selection, environment settings)",
         ]
         choice = utils.prompt_menu(
             "AZURESCAN MAIN MENU",
@@ -212,8 +238,10 @@ def menu_main(sub_id: str, sub_name: str) -> None:
         elif choice == 2:
             menu_tier2(sub_id, sub_name)
         elif choice == 3:
-            _run_all_exporters(TIER1_EXPORTERS + TIER2_EXPORTERS, sub_id, sub_name)
+            menu_governance(sub_id, sub_name)
         elif choice == 4:
+            _run_all_exporters(TIER1_EXPORTERS + TIER2_EXPORTERS + GOVERNANCE_EXPORTERS, sub_id, sub_name)
+        elif choice == 5:
             subprocess.run([sys.executable, str(Path(__file__).parent / "configure.py")])
             # Reload config after configure
             import importlib
@@ -233,7 +261,7 @@ def main() -> None:
         for sid in all_subs:
             sname = utils.get_subscription_name(sid)
             print(f"\nAuto-run: scanning subscription {sname} ({sid})")
-            _run_all_exporters(TIER1_EXPORTERS + TIER2_EXPORTERS, sid, sname)
+            _run_all_exporters(TIER1_EXPORTERS + TIER2_EXPORTERS + GOVERNANCE_EXPORTERS, sid, sname)
         return
 
     menu_main(sub_id, sub_name)
