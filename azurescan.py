@@ -75,6 +75,7 @@ GOVERNANCE_EXPORTERS = [
 MONITORING_EXPORTERS = [
     ("Metric & Activity Log Alerts",   "monitoring/metric_alerts_export.py"),
     ("Action Groups",                  "monitoring/action_groups_export.py"),
+    ("Log Analytics Workspaces",       "monitoring/log_analytics_export.py"),
 ]
 
 
