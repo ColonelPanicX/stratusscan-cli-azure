@@ -70,6 +70,7 @@ GOVERNANCE_EXPORTERS = [
     ("Defender Secure Scores & Plans", "security/defender_scores_export.py"),
     ("Defender Assessments",           "security/defender_assessments_export.py"),
     ("Advisor Recommendations",        "governance/advisor_export.py"),
+    ("Cost Management (Month-to-Date)", "governance/cost_management_export.py"),
 ]
 
 MONITORING_EXPORTERS = [
