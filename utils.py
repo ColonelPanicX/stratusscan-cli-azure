@@ -357,8 +357,8 @@ def _get_credential():
 
 # Lazy import map: service_name → (module_path, class_name, needs_subscription_id)
 _CLIENT_MAP: Dict[str, tuple] = {
-    "subscription": ("azure.mgmt.resource", "SubscriptionClient", False),
-    "resource": ("azure.mgmt.resource", "ResourceManagementClient", True),
+    "subscription": ("azure.mgmt.resource.subscriptions", "SubscriptionClient", False),
+    "resource": ("azure.mgmt.resource.resources", "ResourceManagementClient", True),
     "compute": ("azure.mgmt.compute", "ComputeManagementClient", True),
     "network": ("azure.mgmt.network", "NetworkManagementClient", True),
     "storage": ("azure.mgmt.storage", "StorageManagementClient", True),
