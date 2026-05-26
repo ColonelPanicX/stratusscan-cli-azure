@@ -417,6 +417,7 @@ def get_azure_client(service_name: str, subscription_id: Optional[str] = None) -
     kwargs: Dict[str, Any] = {}
     if environment == "government":
         kwargs["base_url"] = _GOV_BASE_URL
+        kwargs["credential_scopes"] = [f"{_GOV_BASE_URL}/.default"]
 
     if needs_sub:
         return cls(cred, subscription_id, **kwargs)
