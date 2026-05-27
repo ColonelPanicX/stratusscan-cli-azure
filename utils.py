@@ -163,6 +163,27 @@ def create_export_filename(subscription_name: str, resource_type: str, suffix: s
     return str(out_dir / filename)
 
 
+def archive_outputs() -> Optional[str]:
+    """
+    Bundle every .xlsx in output/ into a single dated zip in output/.
+
+    Returns the zip path, or None if there are no exports to archive.
+    The zip itself is excluded so re-runs don't nest prior archives.
+    """
+    import zipfile
+
+    out_dir = Path(__file__).parent / "output"
+    exports = sorted(p for p in out_dir.glob("*.xlsx"))
+    if not exports:
+        return None
+
+    zip_path = out_dir / f"stratusscan-exports-{get_current_timestamp()}.zip"
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for export in exports:
+            zf.write(export, arcname=export.name)
+    return str(zip_path)
+
+
 # ---------------------------------------------------------------------------
 # Excel output
 # ---------------------------------------------------------------------------
