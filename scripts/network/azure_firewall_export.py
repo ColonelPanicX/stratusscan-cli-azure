@@ -36,7 +36,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
 
     rows = []
     for fw in firewalls:
-        rg = fw.id.split("/resourceGroups/")[1].split("/")[0] if fw.id else ""
+        rg = utils.extract_resource_group(fw.id)
         tags = fw.tags or {}
         policy_id = ""
         if fw.firewall_policy and fw.firewall_policy.id:

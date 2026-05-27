@@ -55,7 +55,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
 
     rows = []
     for disk in disks:
-        rg = disk.id.split("/resourceGroups/")[1].split("/")[0] if disk.id else ""
+        rg = utils.extract_resource_group(disk.id)
         tags = disk.tags or {}
         rows.append({
             "Name": disk.name,

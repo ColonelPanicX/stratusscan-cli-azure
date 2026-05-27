@@ -58,7 +58,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
     rows = []
     for vm in vms:
         tags = vm.tags or {}
-        rg = vm.id.split("/resourceGroups/")[1].split("/")[0] if vm.id else ""
+        rg = utils.extract_resource_group(vm.id)
         rows.append({
             "Name": vm.name,
             "Resource Group": rg,

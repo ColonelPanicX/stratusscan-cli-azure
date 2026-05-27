@@ -36,7 +36,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
 
     rows = []
     for acct in accounts:
-        rg = acct.id.split("/resourceGroups/")[1].split("/")[0] if acct.id else ""
+        rg = utils.extract_resource_group(acct.id)
         tags = acct.tags or {}
         rows.append({
             "Name": acct.name,

@@ -51,7 +51,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
 
     rows = []
     for pip in pips:
-        rg = pip.id.split("/resourceGroups/")[1].split("/")[0] if pip.id else ""
+        rg = utils.extract_resource_group(pip.id)
         tags = pip.tags or {}
         rows.append({
             "Name": pip.name,

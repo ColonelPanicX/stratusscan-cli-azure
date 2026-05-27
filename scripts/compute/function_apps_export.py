@@ -38,7 +38,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
     rows = []
     for app in apps:
         rg = app.resource_group or (
-            app.id.split("/resourceGroups/")[1].split("/")[0] if app.id else ""
+            utils.extract_resource_group(app.id)
         )
         tags = app.tags or {}
         rows.append({

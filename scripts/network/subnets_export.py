@@ -24,7 +24,7 @@ def collect_subnets(subscription_id: str) -> list:
     log.info("Scanning subnets across %d VNets", len(vnets))
     rows = []
     for vnet in vnets:
-        vnet_rg = vnet.id.split("/resourceGroups/")[1].split("/")[0] if vnet.id else ""
+        vnet_rg = utils.extract_resource_group(vnet.id)
         for subnet in (vnet.subnets or []):
             nsg_name = ""
             if subnet.network_security_group and subnet.network_security_group.id:

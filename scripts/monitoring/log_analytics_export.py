@@ -28,7 +28,7 @@ def collect_workspaces(subscription_id: str) -> list:
             rg = ""
             ws_id = getattr(ws, "id", "") or ""
             if "/resourceGroups/" in ws_id:
-                rg = ws_id.split("/resourceGroups/")[1].split("/")[0]
+                rg = utils.extract_resource_group(ws_id)
 
             sku_name = ""
             sku = getattr(ws, "sku", None)

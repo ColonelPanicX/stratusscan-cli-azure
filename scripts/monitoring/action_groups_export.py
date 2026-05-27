@@ -42,7 +42,7 @@ def collect_action_groups(subscription_id: str) -> list:
             rg = ""
             ag_id = getattr(ag, "id", "") or ""
             if "/resourceGroups/" in ag_id:
-                rg = ag_id.split("/resourceGroups/")[1].split("/")[0]
+                rg = utils.extract_resource_group(ag_id)
 
             rows.append({
                 "Action Group Name": getattr(ag, "name", "") or "",

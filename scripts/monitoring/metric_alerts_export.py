@@ -58,7 +58,7 @@ def collect_metric_alerts(subscription_id: str) -> list:
             rg = ""
             alert_id = getattr(alert, "id", "") or ""
             if "/resourceGroups/" in alert_id:
-                rg = alert_id.split("/resourceGroups/")[1].split("/")[0]
+                rg = utils.extract_resource_group(alert_id)
 
             window = getattr(alert, "window_size", "") or ""
             if hasattr(window, "total_seconds"):
@@ -92,7 +92,7 @@ def collect_activity_log_alerts(subscription_id: str) -> list:
             rg = ""
             alert_id = getattr(alert, "id", "") or ""
             if "/resourceGroups/" in alert_id:
-                rg = alert_id.split("/resourceGroups/")[1].split("/")[0]
+                rg = utils.extract_resource_group(alert_id)
 
             conditions = []
             condition = getattr(alert, "condition", None)

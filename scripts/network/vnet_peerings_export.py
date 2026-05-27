@@ -24,7 +24,7 @@ def collect_peerings(subscription_id: str) -> list:
     log.info("Scanning peerings across %d VNets", len(vnets))
     rows = []
     for vnet in vnets:
-        vnet_rg = vnet.id.split("/resourceGroups/")[1].split("/")[0] if vnet.id else ""
+        vnet_rg = utils.extract_resource_group(vnet.id)
         for peering in (vnet.virtual_network_peerings or []):
             remote_vnet = ""
             if peering.remote_virtual_network and peering.remote_virtual_network.id:

@@ -36,7 +36,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
 
     rows = []
     for cluster in clusters:
-        rg = cluster.id.split("/resourceGroups/")[1].split("/")[0] if cluster.id else ""
+        rg = utils.extract_resource_group(cluster.id)
         tags = cluster.tags or {}
         agent_pools = cluster.agent_pool_profiles or []
         total_nodes = sum(p.count or 0 for p in agent_pools)

@@ -36,7 +36,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
 
     rows = []
     for nsg in nsgs:
-        rg = nsg.id.split("/resourceGroups/")[1].split("/")[0] if nsg.id else ""
+        rg = utils.extract_resource_group(nsg.id)
         tags = nsg.tags or {}
         inbound = len(nsg.security_rules or [])
         default_inbound = len(nsg.default_security_rules or [])

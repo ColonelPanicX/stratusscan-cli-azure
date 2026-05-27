@@ -36,7 +36,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
 
     rows = []
     for vnet in vnets:
-        rg = vnet.id.split("/resourceGroups/")[1].split("/")[0] if vnet.id else ""
+        rg = utils.extract_resource_group(vnet.id)
         tags = vnet.tags or {}
         address_space = ", ".join(
             vnet.address_space.address_prefixes

@@ -119,7 +119,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
 
     rows = []
     for policy in policies:
-        policy_rg = policy.id.split("/resourceGroups/")[1].split("/")[0] if policy.id else ""
+        policy_rg = utils.extract_resource_group(policy.id)
         policy_name = policy.name or ""
 
         try:
