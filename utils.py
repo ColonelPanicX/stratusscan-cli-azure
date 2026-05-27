@@ -382,6 +382,13 @@ _CLIENT_MAP: Dict[str, tuple] = {
 # Government cloud base URL override
 _GOV_BASE_URL = "https://management.usgovcloudapi.net"
 
+# Some azure-mgmt SDKs default to an api-version not yet available in Azure
+# Government, which lags public cloud. Pin a gov-supported version per service.
+# Only add services that actually fail; the override is applied only in gov.
+_GOV_API_VERSIONS: Dict[str, str] = {
+    "storage": "2025-06-01",
+}
+
 
 def get_azure_client(service_name: str, subscription_id: Optional[str] = None) -> Any:
     """
@@ -420,6 +427,8 @@ def get_azure_client(service_name: str, subscription_id: Optional[str] = None) -
     if environment == "government":
         kwargs["base_url"] = _GOV_BASE_URL
         kwargs["credential_scopes"] = [f"{_GOV_BASE_URL}/.default"]
+        if key in _GOV_API_VERSIONS:
+            kwargs["api_version"] = _GOV_API_VERSIONS[key]
 
     if needs_sub:
         return cls(cred, subscription_id, **kwargs)
