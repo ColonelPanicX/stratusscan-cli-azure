@@ -10,9 +10,13 @@ Stdlib-only — safe to import before any dependency is installed.
 """
 
 import importlib
+import os
 import subprocess
 import sys
 from pathlib import Path
+
+# Guards against an install loop if a package is still missing after install.
+_ATTEMPTED_ENV = "AZURESCAN_BOOTSTRAP_ATTEMPTED"
 
 # Representative modules — the exact submodules utils imports. We attempt a
 # real import (not find_spec) because `azure` is a namespace package: a spec
@@ -60,8 +64,20 @@ def ensure_dependencies() -> None:
     missing = [m for m in _REQUIRED_MODULES if _is_missing(m)]
     if not missing:
         return
+
+    if os.environ.get(_ATTEMPTED_ENV):
+        # Already installed once this session but something is still missing.
+        # Don't loop — let the real import error surface downstream.
+        print(f"WARNING: dependencies still unavailable after install: {', '.join(missing)}")
+        return
+
     print(f"Installing required dependencies (missing: {', '.join(missing)})...")
     deps = _read_pyproject_dependencies()
     subprocess.run([sys.executable, "-m", "pip", "install", *deps], check=True)
-    importlib.invalidate_caches()
-    print("Dependencies installed.\n")
+    print("Dependencies installed. Restarting...\n")
+
+    # Re-exec in a clean interpreter. Probing the imports above populated the
+    # `azure` namespace package's cached __path__ before the packages existed;
+    # a fresh process is the reliable way to pick up the new install.
+    os.environ[_ATTEMPTED_ENV] = "1"
+    os.execv(sys.executable, [sys.executable, *sys.argv])
