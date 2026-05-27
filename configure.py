@@ -11,6 +11,7 @@ Usage:
 """
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -162,6 +163,12 @@ def main() -> None:
 
     environment = select_environment()
     log.info("Environment selected: %s", environment)
+
+    # Apply the choice before discovery so the credential targets the right
+    # cloud (gov managed identities reject the public management audience).
+    os.environ["AZURE_ENVIRONMENT"] = (
+        "AzureUSGovernment" if environment == "government" else "AzurePublicCloud"
+    )
 
     subs = discover_subscriptions()
     selected = select_subscriptions(subs)

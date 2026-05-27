@@ -303,9 +303,11 @@ def detect_environment() -> str:
     2. config.json 'environment' key
     3. Default: 'public'
     """
-    env_var = os.environ.get("AZURE_ENVIRONMENT", "").strip()
-    if env_var.lower() in ("azureusgovernment", "government", "usgov"):
+    env_var = os.environ.get("AZURE_ENVIRONMENT", "").strip().lower()
+    if env_var in ("azureusgovernment", "government", "usgov"):
         return "government"
+    if env_var in ("azurepubliccloud", "public", "azurecloud"):
+        return "public"
     cfg = get_config()
     if cfg.get("environment", "public").lower() in ("government", "azureusgovernment"):
         return "government"
