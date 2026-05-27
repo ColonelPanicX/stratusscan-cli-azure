@@ -431,6 +431,7 @@ _GOV_BASE_URL = "https://management.usgovcloudapi.net"
 _GOV_API_VERSIONS: Dict[str, str] = {
     "storage": "2025-06-01",
     "web": "2025-03-01",
+    "costmanagement": "2023-03-01",
 }
 
 
