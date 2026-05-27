@@ -16,8 +16,13 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Ensure utils is importable from the project root
+# Ensure local modules are importable from the project root
 sys.path.insert(0, str(Path(__file__).parent))
+
+# CloudShell-first: install dependencies before importing utils (which pulls
+# in the Azure SDKs and pandas). No manual pip step required.
+import bootstrap
+bootstrap.ensure_dependencies()
 
 try:
     import utils

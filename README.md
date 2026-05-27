@@ -31,13 +31,12 @@ Sibling project to [StratusScan-CLI (AWS)](https://github.com/ColonelPanicX/Stra
 
 ### Azure Cloud Shell (recommended)
 
-The tool is designed to work in a fresh [Azure Cloud Shell](https://shell.azure.com) session with no extra setup. Credentials are injected automatically.
+The tool is designed to work in a fresh [Azure Cloud Shell](https://shell.azure.com) session with no extra setup. Credentials are injected automatically, and `configure.py` / `azurescan.py` install their own dependencies on first run.
 
 ```bash
 git clone https://github.com/ColonelPanicX/stratusscan-cli-azure.git
 cd stratusscan-cli-azure
-pip install -r <(python -c "import tomllib; d=tomllib.load(open('pyproject.toml','rb')); print('\n'.join(d['project']['dependencies']))")
-python configure.py
+python configure.py    # installs dependencies on first run
 python azurescan.py
 ```
 
@@ -49,16 +48,10 @@ Requires [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) in
 git clone https://github.com/ColonelPanicX/stratusscan-cli-azure.git
 cd stratusscan-cli-azure
 
-# Install dependencies
-pip install azure-identity azure-mgmt-resource azure-mgmt-compute azure-mgmt-network \
-    azure-mgmt-storage azure-mgmt-keyvault azure-mgmt-authorization \
-    azure-mgmt-containerservice azure-mgmt-web azure-mgmt-sql azure-mgmt-cosmosdb \
-    pandas openpyxl python-dateutil questionary
-
 # Authenticate
 az login
 
-# Configure subscription and environment
+# Configure subscription and environment (installs dependencies on first run)
 python configure.py
 
 # Launch AzureScan
