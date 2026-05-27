@@ -44,7 +44,17 @@ def collect_management_groups() -> list:
     client = utils.get_azure_client("managementgroups")
     log.info("Listing management groups")
 
-    groups = list(client.management_groups.list())
+    try:
+        groups = list(client.management_groups.list())
+    except Exception as e:
+        if "AuthorizationFailed" in str(e):
+            print(
+                "Skipping: your account lacks permission to read management groups "
+                "(Microsoft.Management/managementGroups/read)."
+            )
+            log.warning("Management group listing not authorized: %s", e)
+            return []
+        raise
     log.info("Found %d management group(s), fetching details", len(groups))
 
     rows = []
