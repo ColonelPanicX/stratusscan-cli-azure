@@ -90,6 +90,12 @@ def setup_logging(script_name: str = "azurescan", log_to_file: bool = True) -> l
         except Exception as exc:
             logger.warning("File logging unavailable: %s", exc)
 
+    # Quiet noisy third-party loggers. The Azure SDK deserializer emits a
+    # WARNING ("Discriminator source is absent...") per resource, and the HTTP
+    # policy logs full request/response — neither belongs on the console.
+    for noisy in ("azure", "msrest", "urllib3"):
+        logging.getLogger(noisy).setLevel(logging.ERROR)
+
     _logging_configured = True
     return logger
 
@@ -408,6 +414,7 @@ _GOV_BASE_URL = "https://management.usgovcloudapi.net"
 # Only add services that actually fail; the override is applied only in gov.
 _GOV_API_VERSIONS: Dict[str, str] = {
     "storage": "2025-06-01",
+    "web": "2025-03-01",
 }
 
 
