@@ -515,6 +515,19 @@ def get_subscription_name(subscription_id: str) -> str:
     return subscription_id
 
 
+def resolve_target_subscription() -> tuple:
+    """
+    Return (subscription_id, subscription_name) for the exporter to scan.
+
+    Prefers AZURESCAN_SUBSCRIPTION_ID/NAME env vars set by azurescan.py when
+    iterating across multiple subscriptions; falls back to the default in
+    config.json for standalone exporter runs.
+    """
+    sub_id = os.environ.get("AZURESCAN_SUBSCRIPTION_ID") or get_config().get("default_subscription_id", "")
+    sub_name = os.environ.get("AZURESCAN_SUBSCRIPTION_NAME") or get_subscription_name(sub_id)
+    return sub_id, sub_name
+
+
 # ---------------------------------------------------------------------------
 # Interactive menu (shared by azurescan.py and configure.py)
 # ---------------------------------------------------------------------------
