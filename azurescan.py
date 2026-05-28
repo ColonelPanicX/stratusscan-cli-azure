@@ -155,7 +155,7 @@ def _package_outputs() -> None:
     print(f"  In Cloud Shell, download it with:  download {zip_path}")
 
 
-def _run_all_exporters(exporters: list, sub_id: str, sub_name: str) -> None:
+def _run_all_exporters(exporters: list, sub_id: str, sub_name: str, package: bool = True) -> None:
     print(f"\nRunning {len(exporters)} exporter(s)...\n")
     failed = []
     for label, path in exporters:
@@ -171,6 +171,25 @@ def _run_all_exporters(exporters: list, sub_id: str, sub_name: str) -> None:
         print(f"Completed with {len(failed)} failure(s): {', '.join(failed)}")
     else:
         print(f"All {len(exporters)} exporter(s) completed successfully.")
+    if package:
+        _package_outputs()
+
+
+def _run_all_for_configured_subscriptions(exporters: list, fallback_sub_id: str, fallback_sub_name: str) -> None:
+    """Iterate the given exporters across every subscription saved in config."""
+    configured = utils.get_config().get("subscriptions") or []
+    subs = configured if configured else [{"id": fallback_sub_id, "name": fallback_sub_name}]
+
+    if len(subs) > 1:
+        print(f"\nScanning {len(subs)} subscription(s)...")
+
+    for sub in subs:
+        sid = sub["id"]
+        sname = sub.get("name") or utils.get_subscription_name(sid)
+        if len(subs) > 1:
+            print(f"\n========== Subscription: {sname} ({sid}) ==========")
+        _run_all_exporters(exporters, sid, sname, package=False)
+
     _package_outputs()
 
 
@@ -292,7 +311,11 @@ def menu_main(sub_id: str, sub_name: str) -> None:
         elif choice == 4:
             menu_monitoring(sub_id, sub_name)
         elif choice == 5:
-            _run_all_exporters(TIER1_EXPORTERS + TIER2_EXPORTERS + GOVERNANCE_EXPORTERS + MONITORING_EXPORTERS, sub_id, sub_name)
+            _run_all_for_configured_subscriptions(
+                TIER1_EXPORTERS + TIER2_EXPORTERS + GOVERNANCE_EXPORTERS + MONITORING_EXPORTERS,
+                sub_id,
+                sub_name,
+            )
         elif choice == 6:
             _package_outputs()
         elif choice == 7:
