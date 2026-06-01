@@ -39,43 +39,43 @@ SCRIPTS_DIR = Path(__file__).parent / "scripts"
 TIER1_EXPORTERS = [
     ("Subscriptions",                  "subscriptions_export.py"),
     ("Resource Groups",                "resource_groups_export.py"),
-    ("Virtual Machines",               "compute/virtual_machines_export.py"),
-    ("Managed Disks",                  "compute/managed_disks_export.py"),
-    ("Virtual Networks",               "network/virtual_networks_export.py"),
-    ("Subnets",                        "network/subnets_export.py"),
-    ("Network Security Groups",        "network/network_security_groups_export.py"),
-    ("Public IP Addresses",            "network/public_ips_export.py"),
-    ("Storage Accounts",               "storage/storage_accounts_export.py"),
-    ("Key Vaults",                     "security/key_vault_export.py"),
-    ("RBAC Role Assignments",          "security/role_assignments_export.py"),
+    ("Virtual Machines",               "virtual_machines_export.py"),
+    ("Managed Disks",                  "managed_disks_export.py"),
+    ("Virtual Networks",               "virtual_networks_export.py"),
+    ("Subnets",                        "subnets_export.py"),
+    ("Network Security Groups",        "network_security_groups_export.py"),
+    ("Public IP Addresses",            "public_ips_export.py"),
+    ("Storage Accounts",               "storage_accounts_export.py"),
+    ("Key Vaults",                     "key_vault_export.py"),
+    ("RBAC Role Assignments",          "role_assignments_export.py"),
 ]
 
 TIER2_EXPORTERS = [
-    ("AKS Clusters",                   "compute/aks_clusters_export.py"),
-    ("App Service / Web Apps",         "compute/app_service_export.py"),
-    ("Function Apps",                  "compute/function_apps_export.py"),
-    ("Azure SQL Databases",            "databases/azure_sql_export.py"),
-    ("Cosmos DB Accounts",             "databases/cosmos_db_export.py"),
-    ("Load Balancers",                 "network/load_balancers_export.py"),
-    ("Application Gateways",           "network/application_gateway_export.py"),
-    ("Azure Firewalls",                "network/azure_firewall_export.py"),
-    ("Firewall Policy Rules",          "network/firewall_policy_rules_export.py"),
-    ("Route Tables",                   "network/route_tables_export.py"),
-    ("VNet Peerings",                  "network/vnet_peerings_export.py"),
+    ("AKS Clusters",                   "aks_clusters_export.py"),
+    ("App Service / Web Apps",         "app_service_export.py"),
+    ("Function Apps",                  "function_apps_export.py"),
+    ("Azure SQL Databases",            "azure_sql_export.py"),
+    ("Cosmos DB Accounts",             "cosmos_db_export.py"),
+    ("Load Balancers",                 "load_balancers_export.py"),
+    ("Application Gateways",           "application_gateway_export.py"),
+    ("Azure Firewalls",                "azure_firewall_export.py"),
+    ("Firewall Policy Rules",          "firewall_policy_rules_export.py"),
+    ("Route Tables",                   "route_tables_export.py"),
+    ("VNet Peerings",                  "vnet_peerings_export.py"),
 ]
 
 GOVERNANCE_EXPORTERS = [
-    ("Azure Policy Assignments",       "governance/policy_assignments_export.py"),
-    ("Management Groups",              "governance/management_groups_export.py"),
-    ("Defender Secure Scores & Plans", "security/defender_scores_export.py"),
-    ("Defender Assessments",           "security/defender_assessments_export.py"),
-    ("Advisor Recommendations",        "governance/advisor_export.py"),
+    ("Azure Policy Assignments",       "policy_assignments_export.py"),
+    ("Management Groups",              "management_groups_export.py"),
+    ("Defender Secure Scores & Plans", "defender_scores_export.py"),
+    ("Defender Assessments",           "defender_assessments_export.py"),
+    ("Advisor Recommendations",        "advisor_export.py"),
 ]
 
 MONITORING_EXPORTERS = [
-    ("Metric & Activity Log Alerts",   "monitoring/metric_alerts_export.py"),
-    ("Action Groups",                  "monitoring/action_groups_export.py"),
-    ("Log Analytics Workspaces",       "monitoring/log_analytics_export.py"),
+    ("Metric & Activity Log Alerts",   "metric_alerts_export.py"),
+    ("Action Groups",                  "action_groups_export.py"),
+    ("Log Analytics Workspaces",       "log_analytics_export.py"),
 ]
 
 

@@ -140,7 +140,7 @@ AZURESCAN_AUTO_RUN=1 AZURESCAN_SUBSCRIPTIONS=sub-id-1,sub-id-2 python azurescan.
 Individual exporters also support CI mode:
 
 ```bash
-AZURESCAN_AUTO_RUN=1 python scripts/compute/virtual_machines_export.py
+AZURESCAN_AUTO_RUN=1 python scripts/virtual_machines_export.py
 ```
 
 ---
@@ -160,9 +160,9 @@ Select **Tier 1** or **Tier 2** from the menu, then pick an individual exporter 
 Every exporter can run standalone:
 
 ```bash
-python scripts/compute/virtual_machines_export.py
-python scripts/network/virtual_networks_export.py
-python scripts/security/role_assignments_export.py
+python scripts/virtual_machines_export.py
+python scripts/virtual_networks_export.py
+python scripts/role_assignments_export.py
 ```
 
 ---

@@ -193,16 +193,9 @@ if __name__ == "__main__":
 
 ### Where to put it
 
-| Service category | Directory |
-|---|---|
-| VMs, disks, AKS, App Service, Functions | `scripts/compute/` |
-| VNets, subnets, NSGs, firewalls, load balancers | `scripts/network/` |
-| Storage accounts, blobs | `scripts/storage/` |
-| SQL, Cosmos DB, other databases | `scripts/databases/` |
-| Key Vault, RBAC, Defender, Policy | `scripts/security/` |
-| Subscription-level, resource groups | `scripts/` (root) |
+All exporter scripts live in `scripts/` (flat directory, no subdirs). Name the file `{resource_type}_export.py`.
 
-After adding the script, register it in `azurescan.py` under the appropriate tier (`TIER1_EXPORTERS` or `TIER2_EXPORTERS`).
+After adding the script, register it in `azurescan.py` under the appropriate tier (`TIER1_EXPORTERS`, `TIER2_EXPORTERS`, `GOVERNANCE_EXPORTERS`, or `MONITORING_EXPORTERS`).
 
 ---
 

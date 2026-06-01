@@ -42,33 +42,37 @@ No arbitrary prints in shared code.
 azurescan.py              # main menu — launches exporters as subprocesses
 configure.py              # subscription/environment config wizard
 utils.py                  # shared library — imported by every exporter
-scripts/
+scripts/                  # all exporters — flat directory, no subdirs
   subscriptions_export.py
   resource_groups_export.py
-  compute/
-    virtual_machines_export.py
-    managed_disks_export.py
-    aks_clusters_export.py
-    app_service_export.py
-    function_apps_export.py
-  network/
-    virtual_networks_export.py
-    subnets_export.py
-    network_security_groups_export.py
-    public_ips_export.py
-    load_balancers_export.py
-    application_gateway_export.py
-    azure_firewall_export.py
-    route_tables_export.py
-    vnet_peerings_export.py
-  storage/
-    storage_accounts_export.py
-  databases/
-    azure_sql_export.py
-    cosmos_db_export.py
-  security/
-    key_vault_export.py
-    role_assignments_export.py
+  virtual_machines_export.py
+  managed_disks_export.py
+  aks_clusters_export.py
+  app_service_export.py
+  function_apps_export.py
+  virtual_networks_export.py
+  subnets_export.py
+  network_security_groups_export.py
+  public_ips_export.py
+  load_balancers_export.py
+  application_gateway_export.py
+  azure_firewall_export.py
+  firewall_policy_rules_export.py
+  route_tables_export.py
+  vnet_peerings_export.py
+  storage_accounts_export.py
+  azure_sql_export.py
+  cosmos_db_export.py
+  key_vault_export.py
+  role_assignments_export.py
+  policy_assignments_export.py
+  management_groups_export.py
+  defender_scores_export.py
+  defender_assessments_export.py
+  advisor_export.py
+  metric_alerts_export.py
+  action_groups_export.py
+  log_analytics_export.py
 output/                   # all .xlsx exports land here
 logs/                     # per-run log files (14-day retention)
 policies/                 # Azure RBAC read-only role definitions
@@ -96,7 +100,7 @@ Every script in `scripts/` must follow this structure exactly:
 try:
     import utils
 except ImportError:
-    sys.path.append(str(Path(__file__).parent.parent))  # adjust depth as needed
+    sys.path.append(str(Path(__file__).parent.parent))
     import utils
 
 utils.setup_logging("my-service-export")
