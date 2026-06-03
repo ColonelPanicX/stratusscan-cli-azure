@@ -90,6 +90,9 @@ def setup_logging(script_name: str = "azurescan", log_to_file: bool = True) -> l
         except Exception as exc:
             logger.warning("File logging unavailable: %s", exc)
 
+    for noisy_logger in ("azure", "msrest", "urllib3"):
+        logging.getLogger(noisy_logger).setLevel(logging.ERROR)
+
     _logging_configured = True
     return logger
 
@@ -303,9 +306,11 @@ def detect_environment() -> str:
     2. config.json 'environment' key
     3. Default: 'public'
     """
-    env_var = os.environ.get("AZURE_ENVIRONMENT", "").strip()
-    if env_var.lower() in ("azureusgovernment", "government", "usgov"):
+    env_var = os.environ.get("AZURE_ENVIRONMENT", "").strip().lower()
+    if env_var in ("azureusgovernment", "government", "usgov"):
         return "government"
+    if env_var in ("azurepubliccloud", "public", "azurecloud"):
+        return "public"
     cfg = get_config()
     if cfg.get("environment", "public").lower() in ("government", "azureusgovernment"):
         return "government"
@@ -380,6 +385,13 @@ _CLIENT_MAP: Dict[str, tuple] = {
 # Government cloud base URL override
 _GOV_BASE_URL = "https://management.usgovcloudapi.net"
 
+# Azure Government can lag public cloud SDK defaults. Keep overrides targeted
+# to services that have been observed failing against the default api-version.
+_GOV_API_VERSIONS: Dict[str, str] = {
+    "storage": "2025-06-01",
+    "web": "2025-03-01",
+}
+
 
 def get_azure_client(service_name: str, subscription_id: Optional[str] = None) -> Any:
     """
@@ -417,6 +429,8 @@ def get_azure_client(service_name: str, subscription_id: Optional[str] = None) -
     kwargs: Dict[str, Any] = {}
     if environment == "government":
         kwargs["base_url"] = _GOV_BASE_URL
+        if key in _GOV_API_VERSIONS:
+            kwargs["api_version"] = _GOV_API_VERSIONS[key]
 
     if needs_sub:
         return cls(cred, subscription_id, **kwargs)
