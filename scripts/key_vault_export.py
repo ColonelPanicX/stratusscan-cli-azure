@@ -45,7 +45,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
 
     rows = []
     for vault_ref in vaults_summary:
-        rg = vault_ref.id.split("/resourceGroups/")[1].split("/")[0] if vault_ref.id else ""
+        rg = utils.extract_resource_group(vault_ref.id)
         vault = _get_vault_detail(client, rg, vault_ref.name)
         if vault is None:
             continue

@@ -89,8 +89,9 @@ def _scope_label(scope: str) -> str:
         return ""
     if "/managementGroups/" in scope:
         return scope.split("/managementGroups/")[-1]
-    if "/resourceGroups/" in scope:
-        return scope.split("/resourceGroups/")[-1].split("/")[0]
+    resource_group = utils.extract_resource_group(scope)
+    if resource_group:
+        return resource_group
     if "/subscriptions/" in scope:
         return "subscription"
     return scope
