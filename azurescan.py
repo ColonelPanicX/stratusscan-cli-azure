@@ -70,6 +70,9 @@ GOVERNANCE_EXPORTERS = [
     ("Defender Secure Scores & Plans", "defender_scores_export.py"),
     ("Defender Assessments",           "defender_assessments_export.py"),
     ("Advisor Recommendations",        "advisor_export.py"),
+    ("Resource Locks",                 "resource_locks_export.py"),
+    ("Resource Tags Inventory",        "resource_tags_export.py"),
+    ("Custom Policy Definitions",      "policy_definitions_export.py"),
 ]
 
 MONITORING_EXPORTERS = [
