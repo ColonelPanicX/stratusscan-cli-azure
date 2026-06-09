@@ -62,6 +62,8 @@ TIER2_EXPORTERS = [
     ("Firewall Policy Rules",          "firewall_policy_rules_export.py"),
     ("Route Tables",                   "route_tables_export.py"),
     ("VNet Peerings",                  "vnet_peerings_export.py"),
+    ("Blob Containers",                "blob_containers_export.py"),
+    ("File Shares",                    "file_shares_export.py"),
 ]
 
 GOVERNANCE_EXPORTERS = [
