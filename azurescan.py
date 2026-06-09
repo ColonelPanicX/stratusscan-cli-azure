@@ -55,6 +55,7 @@ TIER2_EXPORTERS = [
     ("App Service / Web Apps",         "app_service_export.py"),
     ("Function Apps",                  "function_apps_export.py"),
     ("Azure SQL Databases",            "azure_sql_export.py"),
+    ("SQL Managed Instances",          "sql_managed_instance_export.py"),
     ("Cosmos DB Accounts",             "cosmos_db_export.py"),
     ("Load Balancers",                 "load_balancers_export.py"),
     ("Application Gateways",           "application_gateway_export.py"),
