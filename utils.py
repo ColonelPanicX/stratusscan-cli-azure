@@ -163,6 +163,22 @@ def create_export_filename(subscription_name: str, resource_type: str, suffix: s
     return str(out_dir / filename)
 
 
+def extract_resource_group(resource_id: Optional[str]) -> str:
+    """
+    Return the resource group name from an Azure resource ID, or "" if absent.
+
+    Azure APIs are inconsistent about the resourceGroups segment casing, so
+    callers should use this instead of a literal split on "/resourceGroups/".
+    """
+    if not resource_id:
+        return ""
+    parts = resource_id.split("/")
+    for i, part in enumerate(parts):
+        if part.lower() == "resourcegroups" and i + 1 < len(parts):
+            return parts[i + 1]
+    return ""
+
+
 # ---------------------------------------------------------------------------
 # Excel output
 # ---------------------------------------------------------------------------

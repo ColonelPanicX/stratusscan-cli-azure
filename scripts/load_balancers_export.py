@@ -36,7 +36,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
 
     rows = []
     for lb in lbs:
-        rg = lb.id.split("/resourceGroups/")[1].split("/")[0] if lb.id else ""
+        rg = utils.extract_resource_group(lb.id)
         tags = lb.tags or {}
         frontend_ips = len(lb.frontend_ip_configurations or [])
         backend_pools = len(lb.backend_address_pools or [])
