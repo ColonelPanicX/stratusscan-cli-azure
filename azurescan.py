@@ -94,6 +94,7 @@ MONITORING_EXPORTERS = [
     ("Metric & Activity Log Alerts",   "metric_alerts_export.py"),
     ("Action Groups",                  "action_groups_export.py"),
     ("Log Analytics Workspaces",       "log_analytics_export.py"),
+    ("Diagnostic Settings (audit)",    "diagnostic_settings_export.py"),
 ]
 
 
