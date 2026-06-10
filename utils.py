@@ -167,8 +167,8 @@ def extract_resource_group(resource_id: Optional[str]) -> str:
     """
     Return the resource group name from an Azure resource ID, or "" if absent.
 
-    Azure APIs are inconsistent about the resourceGroups segment casing, so
-    callers should use this instead of a literal split on "/resourceGroups/".
+    Azure APIs are not consistent about casing the resourceGroups segment, and
+    some IDs are subscription- or tenant-scoped.
     """
     if not resource_id:
         return ""
@@ -319,9 +319,11 @@ def detect_environment() -> str:
     2. config.json 'environment' key
     3. Default: 'public'
     """
-    env_var = os.environ.get("AZURE_ENVIRONMENT", "").strip()
-    if env_var.lower() in ("azureusgovernment", "government", "usgov"):
+    env_var = os.environ.get("AZURE_ENVIRONMENT", "").strip().lower()
+    if env_var in ("azureusgovernment", "government", "usgov"):
         return "government"
+    if env_var in ("azurepubliccloud", "public", "azurecloud"):
+        return "public"
     cfg = get_config()
     if cfg.get("environment", "public").lower() in ("government", "azureusgovernment"):
         return "government"
@@ -412,6 +414,12 @@ _CLIENT_MAP: Dict[str, tuple] = {
 # Government cloud base URL override
 _GOV_BASE_URL = "https://management.usgovcloudapi.net"
 
+# Azure Government can lag public cloud SDK defaults. Keep overrides targeted
+# to services that fail against the default api-version.
+_GOV_API_VERSIONS: Dict[str, str] = {
+    "storage": "2025-06-01",
+}
+
 
 def get_azure_client(service_name: str, subscription_id: Optional[str] = None) -> Any:
     """
@@ -450,6 +458,8 @@ def get_azure_client(service_name: str, subscription_id: Optional[str] = None) -
     if environment == "government":
         kwargs["base_url"] = _GOV_BASE_URL
         kwargs["credential_scopes"] = [f"{_GOV_BASE_URL}/.default"]
+        if key in _GOV_API_VERSIONS:
+            kwargs["api_version"] = _GOV_API_VERSIONS[key]
 
     if needs_sub:
         return cls(cred, subscription_id, **kwargs)
