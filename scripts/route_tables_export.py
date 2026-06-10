@@ -36,7 +36,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
 
     rows = []
     for rt in tables:
-        rg = rt.id.split("/resourceGroups/")[1].split("/")[0] if rt.id else ""
+        rg = utils.extract_resource_group(rt.id)
         tags = rt.tags or {}
         routes = rt.routes or []
         associated_subnets = len(rt.subnets or [])

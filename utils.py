@@ -166,6 +166,42 @@ def create_export_filename(subscription_name: str, resource_type: str, suffix: s
     return str(out_dir / filename)
 
 
+def extract_resource_group(resource_id: Optional[str]) -> str:
+    """
+    Return the resource group name from an Azure resource ID, or "" if absent.
+
+    Azure APIs are inconsistent about the resourceGroups segment casing, so
+    callers should use this instead of a literal split on "/resourceGroups/".
+    """
+    if not resource_id:
+        return ""
+    parts = resource_id.split("/")
+    for i, part in enumerate(parts):
+        if part.lower() == "resourcegroups" and i + 1 < len(parts):
+            return parts[i + 1]
+    return ""
+
+
+def archive_outputs() -> Optional[str]:
+    """
+    Bundle every .xlsx in output/ into a single dated zip.
+
+    Returns the zip path, or None if there are no exports to archive.
+    """
+    import zipfile
+
+    out_dir = Path(__file__).parent / "output"
+    exports = sorted(out_dir.glob("*.xlsx"))
+    if not exports:
+        return None
+
+    zip_path = out_dir / f"exports-{get_current_timestamp()}.zip"
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for export in exports:
+            zf.write(export, arcname=export.name)
+    return str(zip_path)
+
+
 # ---------------------------------------------------------------------------
 # Excel output
 # ---------------------------------------------------------------------------
@@ -339,6 +375,22 @@ _credential_lock = threading.Lock()
 _credential_cache: Optional[Any] = None
 
 
+class _GovernmentCredential:
+    """Rewrite public ARM token scopes to the Azure Government ARM scope."""
+
+    def __init__(self, credential: Any) -> None:
+        self._credential = credential
+
+    def get_token(self, *scopes: str, **kwargs: Any) -> Any:
+        gov_scopes = tuple(
+            f"{_GOV_BASE_URL}/.default"
+            if scope in ("https://management.azure.com/.default", "https://management.azure.com")
+            else scope
+            for scope in scopes
+        )
+        return self._credential.get_token(*gov_scopes, **kwargs)
+
+
 def _get_credential():
     """Return a cached DefaultAzureCredential, configured for the active environment."""
     global _credential_cache
@@ -352,8 +404,8 @@ def _get_credential():
 
         environment = detect_environment()
         if environment == "government":
-            _credential_cache = DefaultAzureCredential(
-                authority=AzureAuthorityHosts.AZURE_GOVERNMENT
+            _credential_cache = _GovernmentCredential(
+                DefaultAzureCredential(authority=AzureAuthorityHosts.AZURE_GOVERNMENT)
             )
         else:
             _credential_cache = DefaultAzureCredential()
@@ -362,8 +414,8 @@ def _get_credential():
 
 # Lazy import map: service_name → (module_path, class_name, needs_subscription_id)
 _CLIENT_MAP: Dict[str, tuple] = {
-    "subscription": ("azure.mgmt.resource", "SubscriptionClient", False),
-    "resource": ("azure.mgmt.resource", "ResourceManagementClient", True),
+    "subscription": ("azure.mgmt.resource.subscriptions", "SubscriptionClient", False),
+    "resource": ("azure.mgmt.resource.resources", "ResourceManagementClient", True),
     "compute": ("azure.mgmt.compute", "ComputeManagementClient", True),
     "network": ("azure.mgmt.network", "NetworkManagementClient", True),
     "storage": ("azure.mgmt.storage", "StorageManagementClient", True),
@@ -380,6 +432,7 @@ _CLIENT_MAP: Dict[str, tuple] = {
     "advisor": ("azure.mgmt.advisor", "AdvisorManagementClient", True),
     "monitor": ("azure.mgmt.monitor", "MonitorManagementClient", True),
     "loganalytics": ("azure.mgmt.loganalytics", "LogAnalyticsManagementClient", True),
+    "costmanagement": ("azure.mgmt.costmanagement", "CostManagementClient", False),
 }
 
 # Government cloud base URL override
@@ -429,6 +482,7 @@ def get_azure_client(service_name: str, subscription_id: Optional[str] = None) -
     kwargs: Dict[str, Any] = {}
     if environment == "government":
         kwargs["base_url"] = _GOV_BASE_URL
+        kwargs["credential_scopes"] = [f"{_GOV_BASE_URL}/.default"]
         if key in _GOV_API_VERSIONS:
             kwargs["api_version"] = _GOV_API_VERSIONS[key]
 

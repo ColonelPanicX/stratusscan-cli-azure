@@ -36,7 +36,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
 
     rows = []
     for gw in gateways:
-        rg = gw.id.split("/resourceGroups/")[1].split("/")[0] if gw.id else ""
+        rg = utils.extract_resource_group(gw.id)
         tags = gw.tags or {}
         rows.append({
             "Name": gw.name,

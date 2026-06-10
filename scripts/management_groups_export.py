@@ -4,6 +4,8 @@
 import sys
 from pathlib import Path
 
+from azure.core.exceptions import HttpResponseError
+
 try:
     import utils
 except ImportError:
@@ -16,6 +18,11 @@ utils.setup_logging("management-groups-export")
 utils.log_script_start("management_groups_export.py", "Management Groups Export")
 
 log = utils.get_logger()
+
+
+def _is_authorization_failed(error: HttpResponseError) -> bool:
+    code = getattr(getattr(error, "error", None), "code", "") or ""
+    return code == "AuthorizationFailed" or "AuthorizationFailed" in str(error)
 
 
 def _count_subscriptions(mg) -> int:
@@ -44,7 +51,17 @@ def collect_management_groups() -> list:
     client = utils.get_azure_client("managementgroups")
     log.info("Listing management groups")
 
-    groups = list(client.management_groups.list())
+    try:
+        groups = list(client.management_groups.list())
+    except HttpResponseError as e:
+        if not _is_authorization_failed(e):
+            raise
+        log.warning(
+            "Skipping management groups export: authenticated identity lacks "
+            "Microsoft.Management/managementGroups/read permission"
+        )
+        sys.exit(0)
+
     log.info("Found %d management group(s), fetching details", len(groups))
 
     rows = []
