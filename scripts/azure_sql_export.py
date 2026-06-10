@@ -24,7 +24,7 @@ def collect_sql_servers_and_dbs(subscription_id: str) -> list:
     servers = list(client.servers.list())
     rows = []
     for server in servers:
-        rg = server.id.split("/resourceGroups/")[1].split("/")[0] if server.id else ""
+        rg = utils.extract_resource_group(server.id)
         try:
             databases = list(client.databases.list_by_server(rg, server.name))
         except Exception as exc:
