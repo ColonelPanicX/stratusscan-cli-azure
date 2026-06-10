@@ -369,6 +369,7 @@ _CLIENT_MAP: Dict[str, tuple] = {
     "sql": ("azure.mgmt.sql", "SqlManagementClient", True),
     "cosmosdb": ("azure.mgmt.cosmosdb", "CosmosDBManagementClient", True),
     "policy": ("azure.mgmt.resource.policy", "PolicyClient", True),
+    "locks": ("azure.mgmt.resource.locks", "ManagementLockClient", True),
     "managementgroups": ("azure.mgmt.managementgroups", "ManagementGroupsAPI", False),
     "security": ("azure.mgmt.security", "SecurityCenter", True),
     "advisor": ("azure.mgmt.advisor", "AdvisorManagementClient", True),
