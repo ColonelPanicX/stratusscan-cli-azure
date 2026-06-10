@@ -65,6 +65,15 @@ TIER2_EXPORTERS = [
     ("VNet Peerings",                  "vnet_peerings_export.py"),
     ("Snapshots",                      "snapshots_export.py"),
     ("Availability Sets",              "availability_sets_export.py"),
+    ("Private Endpoints",              "private_endpoints_export.py"),
+    ("NAT Gateways",                   "nat_gateways_export.py"),
+    ("Bastion Hosts",                  "bastion_hosts_export.py"),
+    ("VPN Gateways",                   "vpn_gateways_export.py"),
+    ("ExpressRoute Circuits",          "expressroute_export.py"),
+    ("Virtual WAN & Hubs",             "virtual_wan_export.py"),
+    ("DDoS Protection Plans",          "ddos_protection_export.py"),
+    ("Network Watchers",               "network_watchers_export.py"),
+    ("Service Endpoints",              "service_endpoints_export.py"),
 ]
 
 GOVERNANCE_EXPORTERS = [
