@@ -121,6 +121,12 @@ def main(subscription_id: str, subscription_name: str) -> None:
     for policy in policies:
         policy_rg = utils.extract_resource_group(policy.id)
         policy_name = policy.name or ""
+        if not policy_rg:
+            log.warning(
+                "Skipping firewall policy without resource group in id: %s",
+                policy.id or policy_name,
+            )
+            continue
 
         try:
             rcgs = collect_rule_collection_groups(subscription_id, policy_rg, policy_name)

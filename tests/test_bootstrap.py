@@ -2,6 +2,7 @@ import subprocess
 import sys
 
 import bootstrap
+import configure
 import utils
 
 
@@ -125,3 +126,72 @@ def test_government_credential_rewrites_public_arm_scope():
     assert token == "token"
     assert captured["scopes"] == ("https://management.usgovcloudapi.net/.default",)
     assert captured["kwargs"] == {"tenant_id": "tenant"}
+
+
+def test_government_storage_client_uses_supported_api_version(monkeypatch):
+    captured = {}
+
+    class Client:
+        def __init__(self, credential, subscription_id, **kwargs):
+            captured["credential"] = credential
+            captured["subscription_id"] = subscription_id
+            captured["kwargs"] = kwargs
+
+    monkeypatch.setitem(
+        utils._CLIENT_MAP,
+        "storage",
+        ("tests.fake_storage_module", "Client", True),
+    )
+    monkeypatch.setattr(utils, "_get_credential", lambda: "credential")
+    monkeypatch.setattr(utils, "detect_environment", lambda: "government")
+
+    def fake_import_module(module_path):
+        assert module_path == "tests.fake_storage_module"
+
+        class Module:
+            pass
+
+        Module.Client = Client
+        return Module
+
+    monkeypatch.setattr("importlib.import_module", fake_import_module)
+
+    utils.get_azure_client("storage", "sub-id")
+
+    assert captured["subscription_id"] == "sub-id"
+    assert captured["kwargs"]["api_version"] == "2025-06-01"
+
+
+def test_configure_applies_selected_environment_before_subscription_discovery(monkeypatch):
+    observed = {}
+
+    monkeypatch.setattr(configure, "select_environment", lambda: "government")
+    monkeypatch.setattr(
+        configure,
+        "discover_subscriptions",
+        lambda: observed.setdefault("env", configure.os.environ.get("AZURE_ENVIRONMENT")) or [],
+    )
+    monkeypatch.setattr(configure, "select_subscriptions", lambda subs: [])
+    monkeypatch.delenv("AZURE_ENVIRONMENT", raising=False)
+
+    configure.main()
+
+    assert observed["env"] == "AzureUSGovernment"
+
+
+def test_public_environment_variable_overrides_stale_government_config(monkeypatch):
+    monkeypatch.setenv("AZURE_ENVIRONMENT", "AzurePublicCloud")
+    monkeypatch.setattr(utils, "get_config", lambda: {"environment": "government"})
+
+    assert utils.detect_environment() == "public"
+
+
+def test_extract_resource_group_is_case_insensitive_and_safe():
+    assert (
+        utils.extract_resource_group(
+            "/subscriptions/sub/resourcegroups/RG1/providers/Microsoft.Network/firewallPolicies/policy"
+        )
+        == "RG1"
+    )
+    assert utils.extract_resource_group("/subscriptions/sub/providers/Microsoft.Network/foo/bar") == ""
+    assert utils.extract_resource_group(None) == ""
