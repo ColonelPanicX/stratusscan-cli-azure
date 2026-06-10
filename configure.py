@@ -10,11 +10,14 @@ Usage:
     python configure.py
 """
 
-import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
+
+import bootstrap
+
+bootstrap.ensure_dependencies()
 
 try:
     import utils

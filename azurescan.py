@@ -16,8 +16,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Ensure utils is importable from the project root
+# Ensure local modules are importable from the project root.
 sys.path.insert(0, str(Path(__file__).parent))
+
+import bootstrap
+
+bootstrap.ensure_dependencies()
 
 try:
     import utils
@@ -40,6 +44,7 @@ TIER1_EXPORTERS = [
     ("Subscriptions",                  "subscriptions_export.py"),
     ("Resource Groups",                "resource_groups_export.py"),
     ("Virtual Machines",               "virtual_machines_export.py"),
+    ("VM Scale Sets",                  "vmss_export.py"),
     ("Managed Disks",                  "managed_disks_export.py"),
     ("Virtual Networks",               "virtual_networks_export.py"),
     ("Subnets",                        "subnets_export.py"),
@@ -55,6 +60,7 @@ TIER2_EXPORTERS = [
     ("App Service / Web Apps",         "app_service_export.py"),
     ("Function Apps",                  "function_apps_export.py"),
     ("Azure SQL Databases",            "azure_sql_export.py"),
+    ("SQL Managed Instances",          "sql_managed_instance_export.py"),
     ("Cosmos DB Accounts",             "cosmos_db_export.py"),
     ("Load Balancers",                 "load_balancers_export.py"),
     ("Application Gateways",           "application_gateway_export.py"),
@@ -62,6 +68,19 @@ TIER2_EXPORTERS = [
     ("Firewall Policy Rules",          "firewall_policy_rules_export.py"),
     ("Route Tables",                   "route_tables_export.py"),
     ("VNet Peerings",                  "vnet_peerings_export.py"),
+    ("Snapshots",                      "snapshots_export.py"),
+    ("Availability Sets",              "availability_sets_export.py"),
+    ("Private Endpoints",              "private_endpoints_export.py"),
+    ("NAT Gateways",                   "nat_gateways_export.py"),
+    ("Bastion Hosts",                  "bastion_hosts_export.py"),
+    ("VPN Gateways",                   "vpn_gateways_export.py"),
+    ("ExpressRoute Circuits",          "expressroute_export.py"),
+    ("Virtual WAN & Hubs",             "virtual_wan_export.py"),
+    ("DDoS Protection Plans",          "ddos_protection_export.py"),
+    ("Network Watchers",               "network_watchers_export.py"),
+    ("Service Endpoints",              "service_endpoints_export.py"),
+    ("Blob Containers",                "blob_containers_export.py"),
+    ("File Shares",                    "file_shares_export.py"),
 ]
 
 GOVERNANCE_EXPORTERS = [
@@ -70,6 +89,9 @@ GOVERNANCE_EXPORTERS = [
     ("Defender Secure Scores & Plans", "defender_scores_export.py"),
     ("Defender Assessments",           "defender_assessments_export.py"),
     ("Advisor Recommendations",        "advisor_export.py"),
+    ("Resource Locks",                 "resource_locks_export.py"),
+    ("Resource Tags Inventory",        "resource_tags_export.py"),
+    ("Custom Policy Definitions",      "policy_definitions_export.py"),
     ("Cost Management (Month-to-Date)", "cost_management_export.py"),
 ]
 
@@ -77,6 +99,7 @@ MONITORING_EXPORTERS = [
     ("Metric & Activity Log Alerts",   "metric_alerts_export.py"),
     ("Action Groups",                  "action_groups_export.py"),
     ("Log Analytics Workspaces",       "log_analytics_export.py"),
+    ("Diagnostic Settings (audit)",    "diagnostic_settings_export.py"),
 ]
 
 
@@ -130,7 +153,6 @@ def _run_exporter(script_rel_path: str, sub_id: str, sub_name: str) -> int:
 # ---------------------------------------------------------------------------
 
 def _print_banner() -> None:
-    cfg = utils.get_config()
     env = utils.detect_environment()
     env_label = "AzureUSGovernment" if env == "government" else "AzurePublicCloud"
     version = utils.get_version()
@@ -157,6 +179,15 @@ def _run_all_exporters(exporters: list, sub_id: str, sub_name: str) -> None:
         print(f"Completed with {len(failed)} failure(s): {', '.join(failed)}")
     else:
         print(f"All {len(exporters)} exporter(s) completed successfully.")
+
+
+def _package_outputs() -> None:
+    zip_path = utils.archive_outputs()
+    if not zip_path:
+        print("\nNo exports found in output/ to package.")
+        return
+    print(f"\nPackaged exports → {zip_path}")
+    print(f"  In Cloud Shell, download it with: download {zip_path}")
 
 
 # ---------------------------------------------------------------------------
@@ -256,6 +287,7 @@ def menu_main(sub_id: str, sub_name: str) -> None:
             "Governance          (Policy, Management Groups, Defender, Advisor…)",
             "Monitoring          (Alerts, Action Groups, Log Analytics…)",
             "Run All Exporters   (Tier 1 + Tier 2 + Governance + Monitoring)",
+            "Package Outputs     (zip all exports for Cloud Shell download)",
             "Configure           (subscription selection, environment settings)",
         ]
         choice = utils.prompt_menu(
@@ -278,6 +310,8 @@ def menu_main(sub_id: str, sub_name: str) -> None:
         elif choice == 5:
             _run_all_exporters(TIER1_EXPORTERS + TIER2_EXPORTERS + GOVERNANCE_EXPORTERS + MONITORING_EXPORTERS, sub_id, sub_name)
         elif choice == 6:
+            _package_outputs()
+        elif choice == 7:
             subprocess.run([sys.executable, str(Path(__file__).parent / "configure.py")])
             # Reload config after configure
             import importlib
