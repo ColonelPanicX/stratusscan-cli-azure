@@ -59,6 +59,7 @@ dependencies = [
     "azure-mgmt-advisor>=9.0.0",
     "azure-mgmt-monitor>=6.0.0",
     "azure-mgmt-loganalytics>=13.0.0",
+    "azure-mgmt-costmanagement>=4.0.0",
     "pandas>=2.0.0",
     "openpyxl>=3.1.0",
     "python-dateutil>=2.8.2",
