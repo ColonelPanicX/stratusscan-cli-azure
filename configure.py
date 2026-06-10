@@ -10,6 +10,7 @@ Usage:
     python configure.py
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -161,6 +162,12 @@ def main() -> None:
 
     environment = select_environment()
     log.info("Environment selected: %s", environment)
+
+    # Apply the selected cloud before subscription discovery so credentials use
+    # the correct authority and resource manager endpoint.
+    os.environ["AZURE_ENVIRONMENT"] = (
+        "AzureUSGovernment" if environment == "government" else "AzurePublicCloud"
+    )
 
     subs = discover_subscriptions()
     selected = select_subscriptions(subs)
