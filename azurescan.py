@@ -180,6 +180,15 @@ def _run_all_exporters(exporters: list, sub_id: str, sub_name: str) -> None:
         print(f"All {len(exporters)} exporter(s) completed successfully.")
 
 
+def _package_outputs() -> None:
+    zip_path = utils.archive_outputs()
+    if not zip_path:
+        print("\nNo exports found in output/ to package.")
+        return
+    print(f"\nPackaged exports → {zip_path}")
+    print(f"  In Cloud Shell, download it with: download {zip_path}")
+
+
 # ---------------------------------------------------------------------------
 # Menus
 # ---------------------------------------------------------------------------
@@ -277,6 +286,7 @@ def menu_main(sub_id: str, sub_name: str) -> None:
             "Governance          (Policy, Management Groups, Defender, Advisor…)",
             "Monitoring          (Alerts, Action Groups, Log Analytics…)",
             "Run All Exporters   (Tier 1 + Tier 2 + Governance + Monitoring)",
+            "Package Outputs     (zip all exports for Cloud Shell download)",
             "Configure           (subscription selection, environment settings)",
         ]
         choice = utils.prompt_menu(
@@ -299,6 +309,8 @@ def menu_main(sub_id: str, sub_name: str) -> None:
         elif choice == 5:
             _run_all_exporters(TIER1_EXPORTERS + TIER2_EXPORTERS + GOVERNANCE_EXPORTERS + MONITORING_EXPORTERS, sub_id, sub_name)
         elif choice == 6:
+            _package_outputs()
+        elif choice == 7:
             subprocess.run([sys.executable, str(Path(__file__).parent / "configure.py")])
             # Reload config after configure
             import importlib

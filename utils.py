@@ -179,6 +179,26 @@ def extract_resource_group(resource_id: Optional[str]) -> str:
     return ""
 
 
+def archive_outputs() -> Optional[str]:
+    """
+    Bundle every .xlsx in output/ into a single dated zip.
+
+    Returns the zip path, or None if there are no exports to archive.
+    """
+    import zipfile
+
+    out_dir = Path(__file__).parent / "output"
+    exports = sorted(out_dir.glob("*.xlsx"))
+    if not exports:
+        return None
+
+    zip_path = out_dir / f"exports-{get_current_timestamp()}.zip"
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for export in exports:
+            zf.write(export, arcname=export.name)
+    return str(zip_path)
+
+
 # ---------------------------------------------------------------------------
 # Excel output
 # ---------------------------------------------------------------------------
