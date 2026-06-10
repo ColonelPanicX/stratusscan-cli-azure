@@ -74,6 +74,8 @@ TIER2_EXPORTERS = [
     ("DDoS Protection Plans",          "ddos_protection_export.py"),
     ("Network Watchers",               "network_watchers_export.py"),
     ("Service Endpoints",              "service_endpoints_export.py"),
+    ("Blob Containers",                "blob_containers_export.py"),
+    ("File Shares",                    "file_shares_export.py"),
 ]
 
 GOVERNANCE_EXPORTERS = [
