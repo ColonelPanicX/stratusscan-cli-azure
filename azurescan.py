@@ -16,8 +16,12 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Ensure utils is importable from the project root
+# Ensure local modules are importable from the project root.
 sys.path.insert(0, str(Path(__file__).parent))
+
+import bootstrap
+
+bootstrap.ensure_dependencies()
 
 try:
     import utils
@@ -148,7 +152,6 @@ def _run_exporter(script_rel_path: str, sub_id: str, sub_name: str) -> int:
 # ---------------------------------------------------------------------------
 
 def _print_banner() -> None:
-    cfg = utils.get_config()
     env = utils.detect_environment()
     env_label = "AzureUSGovernment" if env == "government" else "AzurePublicCloud"
     version = utils.get_version()
