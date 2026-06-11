@@ -449,6 +449,10 @@ _CLIENT_MAP: Dict[str, tuple] = {
     "logic": ("azure.mgmt.logic", "LogicManagementClient", True),
     "msi": ("azure.mgmt.msi", "ManagedServiceIdentityClient", True),
     "policyinsights": ("azure.mgmt.policyinsights", "PolicyInsightsClient", True),
+    "automation": ("azure.mgmt.automation", "AutomationClient", True),
+    "batch": ("azure.mgmt.batch", "BatchManagementClient", True),
+    "recoveryservices": ("azure.mgmt.recoveryservices", "RecoveryServicesClient", True),
+    "applicationinsights": ("azure.mgmt.applicationinsights", "ApplicationInsightsManagementClient", True),
 }
 
 # Government cloud base URL override

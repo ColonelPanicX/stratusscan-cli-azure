@@ -94,6 +94,9 @@ TIER2_EXPORTERS = [
     ("Service Endpoints",              "service_endpoints_export.py"),
     ("Blob Containers",                "blob_containers_export.py"),
     ("File Shares",                    "file_shares_export.py"),
+    ("Automation Accounts",            "automation_accounts_export.py"),
+    ("Batch Accounts",                 "batch_accounts_export.py"),
+    ("Recovery Services Vaults",       "recovery_services_vaults_export.py"),
 ]
 
 GOVERNANCE_EXPORTERS = [
@@ -115,6 +118,7 @@ MONITORING_EXPORTERS = [
     ("Action Groups",                  "action_groups_export.py"),
     ("Log Analytics Workspaces",       "log_analytics_export.py"),
     ("Diagnostic Settings (audit)",    "diagnostic_settings_export.py"),
+    ("Application Insights",           "application_insights_export.py"),
 ]
 
 
