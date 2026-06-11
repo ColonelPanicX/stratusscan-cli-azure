@@ -436,6 +436,9 @@ _CLIENT_MAP: Dict[str, tuple] = {
     "postgresql": ("azure.mgmt.postgresqlflexibleservers", "PostgreSQLManagementClient", True),
     "mysql": ("azure.mgmt.mysqlflexibleservers", "MySQLManagementClient", True),
     "redis": ("azure.mgmt.redis", "RedisManagementClient", True),
+    "containerregistry": ("azure.mgmt.containerregistry", "ContainerRegistryManagementClient", True),
+    "appcontainers": ("azure.mgmt.appcontainers", "ContainerAppsAPIClient", True),
+    "containerinstance": ("azure.mgmt.containerinstance", "ContainerInstanceManagementClient", True),
 }
 
 # Government cloud base URL override
