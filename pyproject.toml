@@ -99,14 +99,14 @@ dev = [
 ]
 
 [project.scripts]
-azurescan = "azurescan:main"
-azurescan-configure = "configure:main"
+stratusscan = "stratusscan:main"
+stratusscan-configure = "configure:main"
 
 [project.urls]
 Repository = "https://github.com/ColonelPanicX/StratusScan-CLI-Azure"
 
 [tool.setuptools]
-py-modules = ["azurescan", "configure", "utils"]
+py-modules = ["stratusscan", "configure", "utils"]
 include-package-data = true
 
 [tool.setuptools.package-data]

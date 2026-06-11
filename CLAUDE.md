@@ -18,16 +18,16 @@ Must work in a fresh Azure Cloud Shell session with no extra setup beyond `pip i
 If a proposed change breaks this, reject it.
 
 ### 2. subprocess architecture
-`azurescan.py` launches exporters as subprocesses. It never calls Azure APIs directly.
+`stratusscan.py` launches exporters as subprocesses. It never calls Azure APIs directly.
 Exporters in `scripts/` are fully independent — they can also run directly.
 
 ### 3. No print() in utils.py
 `utils.py` is a shared library. It must not emit console output. Return structured data.
-Only the CLI scripts (azurescan.py, configure.py, exporter scripts) print to console.
+Only the CLI scripts (stratusscan.py, configure.py, exporter scripts) print to console.
 
 ### 4. CI mode
-`AZURESCAN_AUTO_RUN=1` bypasses all interactive prompts.
-`AZURESCAN_SUBSCRIPTIONS=sub-id-1,sub-id-2` sets subscriptions non-interactively.
+`STRATUSSCAN_AUTO_RUN=1` bypasses all interactive prompts.
+`STRATUSSCAN_SUBSCRIPTIONS=sub-id-1,sub-id-2` sets subscriptions non-interactively.
 Every interactive prompt must check `utils.is_auto_run()` before displaying.
 
 ### 5. TUI-ready design
@@ -39,7 +39,7 @@ No arbitrary prints in shared code.
 ## Project Structure
 
 ```
-azurescan.py              # main menu — launches exporters as subprocesses
+stratusscan.py              # main menu — launches exporters as subprocesses
 configure.py              # subscription/environment config wizard
 utils.py                  # shared library — imported by every exporter
 scripts/                  # all exporters — flat directory, no subdirs
@@ -134,7 +134,7 @@ Azure SDK `.list()` methods return lazy iterators — wrap in `list()` to materi
 | `save_multiple_dataframes_to_excel(sheets, filename)` | Multi-sheet write |
 | `get_config()` | Thread-safe config.json singleton |
 | `is_auto_run()` | CI mode check |
-| `get_auto_subscriptions()` | Reads AZURESCAN_SUBSCRIPTIONS env var |
+| `get_auto_subscriptions()` | Reads STRATUSSCAN_SUBSCRIPTIONS env var |
 | `list_subscriptions()` | Lists all accessible subscriptions |
 
 ---

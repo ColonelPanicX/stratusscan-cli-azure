@@ -3,7 +3,7 @@
 StratusScanCLI-Azure — Shared Utilities Module
 Version: v0.1.0
 
-Shared utility functions for all AzureScan exporter scripts.
+Shared utility functions for all StratusScan exporter scripts.
 Handles credential management, client factory, environment detection,
 logging, Excel output, and config I/O.
 
@@ -57,10 +57,10 @@ def _cleanup_old_logs(logs_dir: Path, retention_days: int = 14) -> None:
         pass
 
 
-def setup_logging(script_name: str = "azurescan", log_to_file: bool = True) -> logging.Logger:
+def setup_logging(script_name: str = "stratusscan", log_to_file: bool = True) -> logging.Logger:
     global logger, _logging_configured
 
-    logger = logging.getLogger("azurescan")
+    logger = logging.getLogger("stratusscan")
     logger.setLevel(logging.DEBUG)
     logger.handlers = []
 
@@ -86,7 +86,7 @@ def setup_logging(script_name: str = "azurescan", log_to_file: bool = True) -> l
             fh.setLevel(logging.DEBUG)
             fh.setFormatter(file_fmt)
             logger.addHandler(fh)
-            logger.info("AzureScan logging initialized — %s", log_path)
+            logger.info("StratusScan logging initialized — %s", log_path)
         except Exception as exc:
             logger.warning("File logging unavailable: %s", exc)
 
@@ -100,7 +100,7 @@ def setup_logging(script_name: str = "azurescan", log_to_file: bool = True) -> l
 def get_logger() -> logging.Logger:
     global logger, _logging_configured
     if logger is None:
-        nl = logging.getLogger("azurescan")
+        nl = logging.getLogger("stratusscan")
         if not nl.handlers:
             nl.addHandler(logging.NullHandler())
         return nl
@@ -127,11 +127,11 @@ def log_system_info() -> None:
 # ---------------------------------------------------------------------------
 
 def is_auto_run() -> bool:
-    return os.environ.get("AZURESCAN_AUTO_RUN", "").strip() == "1"
+    return os.environ.get("STRATUSSCAN_AUTO_RUN", "").strip() == "1"
 
 
 def get_auto_subscriptions() -> List[str]:
-    raw = os.environ.get("AZURESCAN_SUBSCRIPTIONS", "").strip()
+    raw = os.environ.get("STRATUSSCAN_SUBSCRIPTIONS", "").strip()
     if not raw:
         return []
     return [s.strip() for s in raw.split(",") if s.strip()]
@@ -333,23 +333,56 @@ def save_config(data: Dict) -> None:
 _GOV_UNAVAILABLE: List[str] = []
 
 
+def detect_azure_cloud() -> Optional[str]:
+    """
+    Best-effort detection of the active Azure cloud from the Azure CLI context.
+
+    Reads the active cloud from the Azure CLI config ([cloud] name = ...), which
+    Cloud Shell and `az cloud set` populate. Honors AZURE_CONFIG_DIR. Returns
+    'government', 'public', or None if it cannot be determined.
+    """
+    import configparser
+
+    config_dir = os.environ.get("AZURE_CONFIG_DIR") or str(Path.home() / ".azure")
+    try:
+        parser = configparser.ConfigParser()
+        parser.read(Path(config_dir) / "config")
+        name = parser.get("cloud", "name", fallback="").strip().lower()
+    except Exception:
+        return None
+    if name == "azureusgovernment":
+        return "government"
+    if name == "azurecloud":
+        return "public"
+    return None
+
+
 def detect_environment() -> str:
     """
     Return 'government' if running in AzureUSGovernment, otherwise 'public'.
 
     Detection order:
     1. AZURE_ENVIRONMENT env var ('AzureUSGovernment' → 'government')
-    2. config.json 'environment' key
-    3. Default: 'public'
+    2. config.json 'environment' key (only if a config.json has been written)
+    3. Auto-detected active Azure CLI cloud (Cloud Shell / `az cloud set`)
+    4. Default: 'public'
     """
     env_var = os.environ.get("AZURE_ENVIRONMENT", "").strip().lower()
     if env_var in ("azureusgovernment", "government", "usgov"):
         return "government"
     if env_var in ("azurepubliccloud", "public", "azurecloud"):
         return "public"
-    cfg = get_config()
-    if cfg.get("environment", "public").lower() in ("government", "azureusgovernment"):
-        return "government"
+
+    config_path = Path(__file__).parent / "config.json"
+    if config_path.exists():
+        cfg = get_config()
+        if cfg.get("environment", "public").lower() in ("government", "azureusgovernment"):
+            return "government"
+        return "public"
+
+    detected = detect_azure_cloud()
+    if detected:
+        return detected
     return "public"
 
 
@@ -559,8 +592,29 @@ def get_subscription_name(subscription_id: str) -> str:
     return subscription_id
 
 
+def resolve_target_subscription() -> tuple:
+    """
+    Return (subscription_id, subscription_name) for an exporter run.
+
+    Prefers the subscription injected by stratusscan.py via the
+    STRATUSSCAN_SUBSCRIPTION_ID / _NAME env vars — this is how multi-subscription
+    runs target each subscription in turn. Falls back to the configured default
+    when an exporter is run directly. Returns ("", "") when nothing is configured.
+    """
+    sub_id = os.environ.get("STRATUSSCAN_SUBSCRIPTION_ID", "").strip()
+    if sub_id:
+        sub_name = os.environ.get("STRATUSSCAN_SUBSCRIPTION_NAME", "").strip()
+        return sub_id, (sub_name or get_subscription_name(sub_id))
+
+    cfg = get_config()
+    sub_id = cfg.get("default_subscription_id", "")
+    if not sub_id:
+        return "", ""
+    return sub_id, get_subscription_name(sub_id)
+
+
 # ---------------------------------------------------------------------------
-# Interactive menu (shared by azurescan.py and configure.py)
+# Interactive menu (shared by stratusscan.py and configure.py)
 # ---------------------------------------------------------------------------
 
 def prompt_menu(

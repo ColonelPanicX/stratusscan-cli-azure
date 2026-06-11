@@ -195,7 +195,7 @@ if __name__ == "__main__":
 
 All exporter scripts live in `scripts/` (flat directory, no subdirs). Name the file `{resource_type}_export.py`.
 
-After adding the script, register it in `azurescan.py` under the appropriate tier (`TIER1_EXPORTERS`, `TIER2_EXPORTERS`, `GOVERNANCE_EXPORTERS`, or `MONITORING_EXPORTERS`).
+After adding the script, register it in `stratusscan.py` under the appropriate tier (`TIER1_EXPORTERS`, `TIER2_EXPORTERS`, `GOVERNANCE_EXPORTERS`, or `MONITORING_EXPORTERS`).
 
 ---
 
@@ -222,9 +222,9 @@ These are non-negotiable and apply to all contributions:
 
 **Minimal dependencies** — stick to `azure-identity`, `azure-mgmt-*` (per service), `pandas`, `openpyxl`, `python-dateutil`, `questionary`. No heavy frameworks. No lockfiles. No build tools.
 
-**Subprocess architecture** — `azurescan.py` launches exporters as subprocesses. It never calls Azure APIs directly. Don't break this boundary.
+**Subprocess architecture** — `stratusscan.py` launches exporters as subprocesses. It never calls Azure APIs directly. Don't break this boundary.
 
-**CI mode** — every interactive prompt must check `utils.is_auto_run()` before displaying. `AZURESCAN_AUTO_RUN=1` must bypass all prompts.
+**CI mode** — every interactive prompt must check `utils.is_auto_run()` before displaying. `STRATUSSCAN_AUTO_RUN=1` must bypass all prompts.
 
 **No print() in utils.py** — `utils.py` is a shared library. Functions return structured results. Only CLI scripts print.
 

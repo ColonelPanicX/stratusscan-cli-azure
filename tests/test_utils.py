@@ -16,18 +16,18 @@ def test_get_current_timestamp_is_mm_dd_yyyy():
 
 
 def test_is_auto_run_reads_env(monkeypatch):
-    monkeypatch.delenv("AZURESCAN_AUTO_RUN", raising=False)
+    monkeypatch.delenv("STRATUSSCAN_AUTO_RUN", raising=False)
     assert utils.is_auto_run() is False
-    monkeypatch.setenv("AZURESCAN_AUTO_RUN", "1")
+    monkeypatch.setenv("STRATUSSCAN_AUTO_RUN", "1")
     assert utils.is_auto_run() is True
-    monkeypatch.setenv("AZURESCAN_AUTO_RUN", "0")
+    monkeypatch.setenv("STRATUSSCAN_AUTO_RUN", "0")
     assert utils.is_auto_run() is False
 
 
 def test_get_auto_subscriptions_parses_csv(monkeypatch):
-    monkeypatch.delenv("AZURESCAN_SUBSCRIPTIONS", raising=False)
+    monkeypatch.delenv("STRATUSSCAN_SUBSCRIPTIONS", raising=False)
     assert utils.get_auto_subscriptions() == []
-    monkeypatch.setenv("AZURESCAN_SUBSCRIPTIONS", " sub-a , sub-b ,, sub-c ")
+    monkeypatch.setenv("STRATUSSCAN_SUBSCRIPTIONS", " sub-a , sub-b ,, sub-c ")
     assert utils.get_auto_subscriptions() == ["sub-a", "sub-b", "sub-c"]
 
 
@@ -78,6 +78,28 @@ def test_detect_environment_government_from_env(monkeypatch):
 def test_detect_environment_from_config_when_env_absent(monkeypatch):
     monkeypatch.delenv("AZURE_ENVIRONMENT", raising=False)
     monkeypatch.setattr(utils, "get_config", lambda: {"environment": "government"})
+    assert utils.detect_environment() == "government"
+
+
+def test_detect_azure_cloud_reads_az_config(monkeypatch, tmp_path):
+    (tmp_path / "config").write_text("[cloud]\nname = AzureUSGovernment\n")
+    monkeypatch.setenv("AZURE_CONFIG_DIR", str(tmp_path))
+    assert utils.detect_azure_cloud() == "government"
+
+    (tmp_path / "config").write_text("[cloud]\nname = AzureCloud\n")
+    assert utils.detect_azure_cloud() == "public"
+
+
+def test_detect_azure_cloud_returns_none_when_absent(monkeypatch, tmp_path):
+    monkeypatch.setenv("AZURE_CONFIG_DIR", str(tmp_path))  # empty dir, no config file
+    assert utils.detect_azure_cloud() is None
+
+
+def test_detect_environment_autodetects_when_unconfigured(monkeypatch, tmp_path):
+    monkeypatch.delenv("AZURE_ENVIRONMENT", raising=False)
+    # no config.json on disk → falls through to az auto-detect
+    monkeypatch.setattr(utils.Path, "exists", lambda self: False)
+    monkeypatch.setattr(utils, "detect_azure_cloud", lambda: "government")
     assert utils.detect_environment() == "government"
 
 

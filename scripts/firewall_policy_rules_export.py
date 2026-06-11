@@ -178,9 +178,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
 
 
 if __name__ == "__main__":
-    cfg = utils.get_config()
-    sub_id = cfg.get("default_subscription_id", "")
-    sub_name = utils.get_subscription_name(sub_id)
+    sub_id, sub_name = utils.resolve_target_subscription()
     if not sub_id:
         print("ERROR: No subscription configured. Run configure.py first.")
         sys.exit(1)

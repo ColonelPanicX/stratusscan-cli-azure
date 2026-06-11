@@ -4,7 +4,7 @@ StratusScanCLI-Azure — Configuration Wizard
 Version: v0.1.0
 
 Handles subscription discovery and selection, environment configuration,
-and writes config.json for use by azurescan.py and all exporter scripts.
+and writes config.json for use by stratusscan.py and all exporter scripts.
 
 Usage:
     python configure.py
@@ -27,7 +27,7 @@ except ImportError:
     sys.exit(1)
 
 utils.setup_logging("configure", log_to_file=True)
-utils.log_script_start("configure.py", "AzureScan Configuration Wizard")
+utils.log_script_start("configure.py", "StratusScan Configuration Wizard")
 
 log = utils.get_logger()
 
@@ -41,12 +41,21 @@ def select_environment() -> str:
     print("  AZURE ENVIRONMENT SELECTION")
     print("=" * 64)
     print("  Select the Azure cloud environment for your credentials.")
+
+    detected = utils.detect_azure_cloud()
+    if detected:
+        detected_label = "AzureUSGovernment" if detected == "government" else "AzurePublicCloud"
+        print(f"  Detected active Azure CLI cloud: {detected_label}")
     print()
 
-    options = [
-        "AzurePublicCloud   (commercial — portal.azure.com)",
-        "AzureUSGovernment  (FedRAMP/government — portal.azure.us)",
-    ]
+    public_label = "AzurePublicCloud   (commercial — portal.azure.com)"
+    gov_label = "AzureUSGovernment  (FedRAMP/government — portal.azure.us)"
+    if detected == "government":
+        gov_label += "   [detected]"
+    elif detected == "public":
+        public_label += "   [detected]"
+
+    options = [public_label, gov_label]
     choice = utils.prompt_menu("ENVIRONMENT", options, allow_back=False, allow_exit=True)
     if choice == "exit":
         sys.exit(0)
@@ -144,7 +153,7 @@ def _print_summary(config: dict) -> None:
     print(f"  Default subscription: {config['default_subscription_id']}")
     print(f"  Subscriptions:        {len(config['subscriptions'])}")
     print()
-    print("  Run azurescan.py to start exporting.")
+    print("  Run stratusscan.py to start exporting.")
     print("=" * 64 + "\n")
 
 

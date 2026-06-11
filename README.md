@@ -31,13 +31,13 @@ Sibling project to [StratusScan-CLI (AWS)](https://github.com/ColonelPanicX/Stra
 
 ### Azure Cloud Shell (recommended)
 
-The tool is designed to work in a fresh [Azure Cloud Shell](https://shell.azure.com) session with no extra setup. Credentials are injected automatically, and `configure.py` / `azurescan.py` install their own dependencies on first run.
+The tool is designed to work in a fresh [Azure Cloud Shell](https://shell.azure.com) session with no extra setup. Credentials are injected automatically, and `configure.py` / `stratusscan.py` install their own dependencies on first run.
 
 ```bash
 git clone https://github.com/ColonelPanicX/stratusscan-cli-azure.git
 cd stratusscan-cli-azure
 python configure.py
-python azurescan.py
+python stratusscan.py
 ```
 
 ### Local Machine
@@ -54,16 +54,16 @@ az login
 # Configure subscription and environment
 python configure.py
 
-# Launch AzureScan
-python azurescan.py
+# Launch StratusScan
+python stratusscan.py
 ```
 
 ### pip install (once published)
 
 ```bash
 pip install stratusscan-cli-azure
-azurescan-configure
-azurescan
+stratusscan-configure
+stratusscan
 ```
 
 > **Note:** PyPI publishing is pending the first stable release.
@@ -127,13 +127,13 @@ export AZURE_ENVIRONMENT=AzureUSGovernment
 ### CI / Unattended execution
 
 ```bash
-AZURESCAN_AUTO_RUN=1 AZURESCAN_SUBSCRIPTIONS=sub-id-1,sub-id-2 python azurescan.py
+STRATUSSCAN_AUTO_RUN=1 STRATUSSCAN_SUBSCRIPTIONS=sub-id-1,sub-id-2 python stratusscan.py
 ```
 
 Individual exporters also support CI mode:
 
 ```bash
-AZURESCAN_AUTO_RUN=1 python scripts/virtual_machines_export.py
+STRATUSSCAN_AUTO_RUN=1 python scripts/virtual_machines_export.py
 ```
 
 ---
@@ -143,7 +143,7 @@ AZURESCAN_AUTO_RUN=1 python scripts/virtual_machines_export.py
 ### Main menu
 
 ```bash
-python azurescan.py
+python stratusscan.py
 ```
 
 Select **Tier 1** or **Tier 2** from the menu, then pick an individual exporter or run all. Exports are saved to `output/` as `.xlsx` files.
