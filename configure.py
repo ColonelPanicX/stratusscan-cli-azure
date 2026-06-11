@@ -4,7 +4,7 @@ StratusScanCLI-Azure — Configuration Wizard
 Version: v0.1.0
 
 Handles subscription discovery and selection, environment configuration,
-and writes config.json for use by azurescan.py and all exporter scripts.
+and writes config.json for use by stratusscan.py and all exporter scripts.
 
 Usage:
     python configure.py
@@ -27,7 +27,7 @@ except ImportError:
     sys.exit(1)
 
 utils.setup_logging("configure", log_to_file=True)
-utils.log_script_start("configure.py", "AzureScan Configuration Wizard")
+utils.log_script_start("configure.py", "StratusScan Configuration Wizard")
 
 log = utils.get_logger()
 
@@ -144,7 +144,7 @@ def _print_summary(config: dict) -> None:
     print(f"  Default subscription: {config['default_subscription_id']}")
     print(f"  Subscriptions:        {len(config['subscriptions'])}")
     print()
-    print("  Run azurescan.py to start exporting.")
+    print("  Run stratusscan.py to start exporting.")
     print("=" * 64 + "\n")
 
 

@@ -123,7 +123,7 @@ Scope name (account name / subscription name) in filenames comes from config map
 Environment variables suppress interactive prompts for CI/CD:
 - `{CSP}SCAN_AUTO_RUN=1` — bypass all interactive prompts
 - AWS: `STRATUSSCAN_REGIONS=us-east-1,us-west-2`
-- Azure: `AZURESCAN_SUBSCRIPTIONS=sub-id-1,sub-id-2`
+- Azure: `STRATUSSCAN_SUBSCRIPTIONS=sub-id-1,sub-id-2`
 
 CLI flags (v0.2.0+): `--version`, `--dry-run`, `--verbose`, `--help`. When no flags are passed, fall through to the interactive menu.
 

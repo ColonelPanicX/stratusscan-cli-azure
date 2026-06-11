@@ -7,8 +7,8 @@ Launches Azure resource exporter scripts as subprocesses.
 This script never calls Azure APIs directly — all API work happens in the exporter scripts.
 
 Usage:
-    python azurescan.py
-    AZURESCAN_AUTO_RUN=1 AZURESCAN_SUBSCRIPTIONS=sub-id python azurescan.py
+    python stratusscan.py
+    STRATUSSCAN_AUTO_RUN=1 STRATUSSCAN_SUBSCRIPTIONS=sub-id python stratusscan.py
 """
 
 import os
@@ -30,7 +30,7 @@ except ImportError:
     sys.exit(1)
 
 utils.setup_logging("main-menu", log_to_file=True)
-utils.log_script_start("azurescan.py", "AzureScan Main Menu")
+utils.log_script_start("stratusscan.py", "StratusScan Main Menu")
 utils.log_system_info()
 
 SCRIPTS_DIR = Path(__file__).parent / "scripts"
@@ -130,7 +130,7 @@ MONITORING_EXPORTERS = [
 def _resolve_subscription() -> tuple[str, str]:
     """
     Return (subscription_id, subscription_name) from config or env var.
-    In auto-run mode, use the first subscription from AZURESCAN_SUBSCRIPTIONS.
+    In auto-run mode, use the first subscription from STRATUSSCAN_SUBSCRIPTIONS.
     """
     if utils.is_auto_run():
         auto_subs = utils.get_auto_subscriptions()
@@ -158,8 +158,8 @@ def _run_exporter(script_rel_path: str, sub_id: str, sub_name: str) -> int:
         return 1
 
     env = os.environ.copy()
-    env["AZURESCAN_SUBSCRIPTION_ID"] = sub_id
-    env["AZURESCAN_SUBSCRIPTION_NAME"] = sub_name
+    env["STRATUSSCAN_SUBSCRIPTION_ID"] = sub_id
+    env["STRATUSSCAN_SUBSCRIPTION_NAME"] = sub_name
 
     result = subprocess.run(
         [sys.executable, str(script_path)],

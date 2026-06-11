@@ -2,7 +2,7 @@
 """
 StratusScanCLI-Azure dependency bootstrap.
 
-CloudShell-first: configure.py and azurescan.py call ensure_dependencies()
+CloudShell-first: configure.py and stratusscan.py call ensure_dependencies()
 before importing utils, which pulls in Azure SDKs, pandas, and questionary.
 This keeps a fresh Azure Cloud Shell run from requiring a manual pip step.
 
@@ -15,7 +15,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-_ATTEMPTED_ENV = "AZURESCAN_BOOTSTRAP_ATTEMPTED"
+_ATTEMPTED_ENV = "STRATUSSCAN_BOOTSTRAP_ATTEMPTED"
 
 _REQUIRED_MODULES = [
     "azure.identity",

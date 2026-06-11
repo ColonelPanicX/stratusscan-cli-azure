@@ -16,18 +16,18 @@ def test_get_current_timestamp_is_mm_dd_yyyy():
 
 
 def test_is_auto_run_reads_env(monkeypatch):
-    monkeypatch.delenv("AZURESCAN_AUTO_RUN", raising=False)
+    monkeypatch.delenv("STRATUSSCAN_AUTO_RUN", raising=False)
     assert utils.is_auto_run() is False
-    monkeypatch.setenv("AZURESCAN_AUTO_RUN", "1")
+    monkeypatch.setenv("STRATUSSCAN_AUTO_RUN", "1")
     assert utils.is_auto_run() is True
-    monkeypatch.setenv("AZURESCAN_AUTO_RUN", "0")
+    monkeypatch.setenv("STRATUSSCAN_AUTO_RUN", "0")
     assert utils.is_auto_run() is False
 
 
 def test_get_auto_subscriptions_parses_csv(monkeypatch):
-    monkeypatch.delenv("AZURESCAN_SUBSCRIPTIONS", raising=False)
+    monkeypatch.delenv("STRATUSSCAN_SUBSCRIPTIONS", raising=False)
     assert utils.get_auto_subscriptions() == []
-    monkeypatch.setenv("AZURESCAN_SUBSCRIPTIONS", " sub-a , sub-b ,, sub-c ")
+    monkeypatch.setenv("STRATUSSCAN_SUBSCRIPTIONS", " sub-a , sub-b ,, sub-c ")
     assert utils.get_auto_subscriptions() == ["sub-a", "sub-b", "sub-c"]
 
 

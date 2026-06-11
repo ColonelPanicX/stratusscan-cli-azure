@@ -3,7 +3,7 @@
 StratusScanCLI-Azure — Shared Utilities Module
 Version: v0.1.0
 
-Shared utility functions for all AzureScan exporter scripts.
+Shared utility functions for all StratusScan exporter scripts.
 Handles credential management, client factory, environment detection,
 logging, Excel output, and config I/O.
 
@@ -57,10 +57,10 @@ def _cleanup_old_logs(logs_dir: Path, retention_days: int = 14) -> None:
         pass
 
 
-def setup_logging(script_name: str = "azurescan", log_to_file: bool = True) -> logging.Logger:
+def setup_logging(script_name: str = "stratusscan", log_to_file: bool = True) -> logging.Logger:
     global logger, _logging_configured
 
-    logger = logging.getLogger("azurescan")
+    logger = logging.getLogger("stratusscan")
     logger.setLevel(logging.DEBUG)
     logger.handlers = []
 
@@ -86,7 +86,7 @@ def setup_logging(script_name: str = "azurescan", log_to_file: bool = True) -> l
             fh.setLevel(logging.DEBUG)
             fh.setFormatter(file_fmt)
             logger.addHandler(fh)
-            logger.info("AzureScan logging initialized — %s", log_path)
+            logger.info("StratusScan logging initialized — %s", log_path)
         except Exception as exc:
             logger.warning("File logging unavailable: %s", exc)
 
@@ -100,7 +100,7 @@ def setup_logging(script_name: str = "azurescan", log_to_file: bool = True) -> l
 def get_logger() -> logging.Logger:
     global logger, _logging_configured
     if logger is None:
-        nl = logging.getLogger("azurescan")
+        nl = logging.getLogger("stratusscan")
         if not nl.handlers:
             nl.addHandler(logging.NullHandler())
         return nl
@@ -127,11 +127,11 @@ def log_system_info() -> None:
 # ---------------------------------------------------------------------------
 
 def is_auto_run() -> bool:
-    return os.environ.get("AZURESCAN_AUTO_RUN", "").strip() == "1"
+    return os.environ.get("STRATUSSCAN_AUTO_RUN", "").strip() == "1"
 
 
 def get_auto_subscriptions() -> List[str]:
-    raw = os.environ.get("AZURESCAN_SUBSCRIPTIONS", "").strip()
+    raw = os.environ.get("STRATUSSCAN_SUBSCRIPTIONS", "").strip()
     if not raw:
         return []
     return [s.strip() for s in raw.split(",") if s.strip()]
@@ -560,7 +560,7 @@ def get_subscription_name(subscription_id: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Interactive menu (shared by azurescan.py and configure.py)
+# Interactive menu (shared by stratusscan.py and configure.py)
 # ---------------------------------------------------------------------------
 
 def prompt_menu(
