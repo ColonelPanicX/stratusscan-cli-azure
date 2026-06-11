@@ -11,6 +11,7 @@ except ImportError:
     import utils
 
 import pandas as pd
+from azure.core.exceptions import HttpResponseError
 
 utils.setup_logging("file-shares-export")
 utils.log_script_start("file_shares_export.py", "File Shares Inventory Export")
@@ -33,6 +34,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
     log.info("Listing file shares across storage accounts in %s", subscription_id)
 
     rows = []
+    unsupported_accounts = 0
     for rg, account in _iter_accounts(client):
         try:
             for s in client.file_shares.list(rg, account):
@@ -47,8 +49,17 @@ def main(subscription_id: str, subscription_name: str) -> None:
                     "Enabled Protocols": str(enabled_protocols),
                     "Provisioning State": str(getattr(s, "provisioning_state", "")) if getattr(s, "provisioning_state", None) else "",
                 })
+        except HttpResponseError as e:
+            if getattr(e, "error", None) and getattr(e.error, "code", "") == "FeatureNotSupportedForAccount":
+                unsupported_accounts += 1
+                log.info("Skipping file shares for unsupported account %s", account)
+                continue
+            log.warning("Failed to list file shares for account %s: %s", account, e)
         except Exception as e:
             log.warning("Failed to list file shares for account %s: %s", account, e)
+
+    if unsupported_accounts:
+        print(f"Skipped {unsupported_accounts} account(s) that do not support Azure Files.")
 
     if not rows:
         print("No file shares found.")
