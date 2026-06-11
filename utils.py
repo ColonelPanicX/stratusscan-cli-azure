@@ -447,6 +447,8 @@ _CLIENT_MAP: Dict[str, tuple] = {
     "servicebus": ("azure.mgmt.servicebus", "ServiceBusManagementClient", True),
     "apimanagement": ("azure.mgmt.apimanagement", "ApiManagementClient", True),
     "logic": ("azure.mgmt.logic", "LogicManagementClient", True),
+    "msi": ("azure.mgmt.msi", "ManagedServiceIdentityClient", True),
+    "policyinsights": ("azure.mgmt.policyinsights", "PolicyInsightsClient", True),
 }
 
 # Government cloud base URL override
