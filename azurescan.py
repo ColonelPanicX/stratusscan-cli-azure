@@ -57,6 +57,9 @@ TIER1_EXPORTERS = [
 
 TIER2_EXPORTERS = [
     ("AKS Clusters",                   "aks_clusters_export.py"),
+    ("Container Registries (ACR)",     "container_registry_export.py"),
+    ("Container Apps",                 "container_apps_export.py"),
+    ("Container Instances (ACI)",      "container_instances_export.py"),
     ("App Service / Web Apps",         "app_service_export.py"),
     ("Function Apps",                  "function_apps_export.py"),
     ("Azure SQL Databases",            "azure_sql_export.py"),
