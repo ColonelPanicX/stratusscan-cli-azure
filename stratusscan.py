@@ -127,26 +127,6 @@ MONITORING_EXPORTERS = [
 # Subscription resolution
 # ---------------------------------------------------------------------------
 
-def _resolve_subscription() -> tuple[str, str]:
-    """
-    Return (subscription_id, subscription_name) from config or env var.
-    In auto-run mode, use the first subscription from STRATUSSCAN_SUBSCRIPTIONS.
-    """
-    if utils.is_auto_run():
-        auto_subs = utils.get_auto_subscriptions()
-        if auto_subs:
-            sub_id = auto_subs[0]
-            return sub_id, utils.get_subscription_name(sub_id)
-
-    cfg = utils.get_config()
-    sub_id = cfg.get("default_subscription_id", "")
-    if not sub_id:
-        print("\nNo subscription configured. Run configure.py first.")
-        print("  python configure.py")
-        sys.exit(1)
-    return sub_id, utils.get_subscription_name(sub_id)
-
-
 def _active_subscriptions() -> list:
     """
     Return the list of (id, name) subscriptions to scan in interactive mode.
@@ -167,6 +147,32 @@ def _active_subscriptions() -> list:
     if sub_id:
         return [(sub_id, utils.get_subscription_name(sub_id))]
     return []
+
+
+def _autodiscover_subscriptions() -> list:
+    """
+    Discover all accessible (enabled) subscriptions when nothing is configured,
+    so stratusscan.py runs with zero setup. configure.py is then only needed to
+    persist a choice or narrow to specific subscriptions.
+    """
+    print("\nNo configuration found — auto-detecting environment and discovering subscriptions...")
+    try:
+        discovered = utils.list_subscriptions()
+    except Exception as exc:
+        print(f"  Subscription discovery failed: {exc}")
+        return []
+    pairs = [
+        (s["id"], s.get("name", s["id"]))
+        for s in discovered
+        if s.get("id") and (not s.get("state") or "enabled" in str(s["state"]).lower())
+    ]
+    if pairs:
+        env_label = (
+            "AzureUSGovernment" if utils.detect_environment() == "government" else "AzurePublicCloud"
+        )
+        print(f"  Environment: {env_label}")
+        print(f"  Found {len(pairs)} accessible subscription(s). Scanning all — run Configure to narrow.")
+    return pairs
 
 
 # ---------------------------------------------------------------------------
@@ -348,10 +354,13 @@ def menu_main(subs: list) -> None:
 def main() -> None:
     if utils.is_auto_run():
         auto_subs = utils.get_auto_subscriptions()
-        if not auto_subs:
-            sub_id, _ = _resolve_subscription()
-            auto_subs = [sub_id]
-        subs = [(sid, utils.get_subscription_name(sid)) for sid in auto_subs]
+        if auto_subs:
+            subs = [(sid, utils.get_subscription_name(sid)) for sid in auto_subs]
+        else:
+            subs = _active_subscriptions() or _autodiscover_subscriptions()
+        if not subs:
+            print("\nNo subscriptions to scan (none set, configured, or discoverable).")
+            sys.exit(1)
         print(f"\nAuto-run: scanning {_subs_label(subs)}")
         _run_all_exporters(
             TIER1_EXPORTERS + TIER2_EXPORTERS + GOVERNANCE_EXPORTERS + MONITORING_EXPORTERS,
@@ -359,10 +368,10 @@ def main() -> None:
         )
         return
 
-    subs = _active_subscriptions()
+    subs = _active_subscriptions() or _autodiscover_subscriptions()
     if not subs:
-        print("\nNo subscription configured. Run configure.py first.")
-        print("  python configure.py")
+        print("\nNo accessible subscriptions found.")
+        print("  Check your Azure sign-in (e.g. `az login`), then try again.")
         sys.exit(1)
     menu_main(subs)
 
