@@ -412,6 +412,19 @@ def _get_credential():
         return _credential_cache
 
 
+def get_credential() -> Any:
+    """
+    Return the shared credential for use with data-plane SDKs (e.g. Key Vault
+    keys/secrets/certificates clients) that are not azure-mgmt-* clients and so
+    are not covered by get_azure_client().
+
+    The credential is configured for the active environment; Key Vault data-plane
+    clients resolve the correct (public or government) token scope via challenge
+    authentication, so no per-cloud scope handling is needed here.
+    """
+    return _get_credential()
+
+
 # Lazy import map: service_name → (module_path, class_name, needs_subscription_id)
 _CLIENT_MAP: Dict[str, tuple] = {
     "subscription": ("azure.mgmt.resource.subscriptions", "SubscriptionClient", False),

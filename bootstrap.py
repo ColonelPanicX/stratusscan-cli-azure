@@ -24,6 +24,7 @@ _REQUIRED_MODULES = [
     "azure.mgmt.compute",
     "azure.mgmt.network",
     "azure.mgmt.storage",
+    "azure.keyvault.secrets",
     "pandas",
     "openpyxl",
     "dateutil",
