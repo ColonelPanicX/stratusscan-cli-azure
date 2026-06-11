@@ -443,6 +443,10 @@ _CLIENT_MAP: Dict[str, tuple] = {
     "privatedns": ("azure.mgmt.privatedns", "PrivateDnsManagementClient", True),
     "cdn": ("azure.mgmt.cdn", "CdnManagementClient", True),
     "trafficmanager": ("azure.mgmt.trafficmanager", "TrafficManagerManagementClient", True),
+    "eventhub": ("azure.mgmt.eventhub", "EventHubManagementClient", True),
+    "servicebus": ("azure.mgmt.servicebus", "ServiceBusManagementClient", True),
+    "apimanagement": ("azure.mgmt.apimanagement", "ApiManagementClient", True),
+    "logic": ("azure.mgmt.logic", "LogicManagementClient", True),
 }
 
 # Government cloud base URL override
