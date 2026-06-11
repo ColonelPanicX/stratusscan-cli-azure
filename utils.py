@@ -439,6 +439,10 @@ _CLIENT_MAP: Dict[str, tuple] = {
     "containerregistry": ("azure.mgmt.containerregistry", "ContainerRegistryManagementClient", True),
     "appcontainers": ("azure.mgmt.appcontainers", "ContainerAppsAPIClient", True),
     "containerinstance": ("azure.mgmt.containerinstance", "ContainerInstanceManagementClient", True),
+    "dns": ("azure.mgmt.dns", "DnsManagementClient", True),
+    "privatedns": ("azure.mgmt.privatedns", "PrivateDnsManagementClient", True),
+    "cdn": ("azure.mgmt.cdn", "CdnManagementClient", True),
+    "trafficmanager": ("azure.mgmt.trafficmanager", "TrafficManagerManagementClient", True),
 }
 
 # Government cloud base URL override
