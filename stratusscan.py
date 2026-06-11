@@ -147,6 +147,28 @@ def _resolve_subscription() -> tuple[str, str]:
     return sub_id, utils.get_subscription_name(sub_id)
 
 
+def _active_subscriptions() -> list:
+    """
+    Return the list of (id, name) subscriptions to scan in interactive mode.
+
+    Every subscription saved by configure.py is scanned ("Use all subscriptions"
+    works as expected); falls back to the default, then to an empty list when
+    nothing is configured.
+    """
+    cfg = utils.get_config()
+    pairs = [
+        (s["id"], s.get("name", s["id"]))
+        for s in cfg.get("subscriptions", [])
+        if s.get("id")
+    ]
+    if pairs:
+        return pairs
+    sub_id = cfg.get("default_subscription_id", "")
+    if sub_id:
+        return [(sub_id, utils.get_subscription_name(sub_id))]
+    return []
+
+
 # ---------------------------------------------------------------------------
 # Subprocess launcher
 # ---------------------------------------------------------------------------
@@ -183,22 +205,41 @@ def _print_banner() -> None:
     print("=" * 64)
 
 
-def _run_all_exporters(exporters: list, sub_id: str, sub_name: str) -> None:
-    print(f"\nRunning {len(exporters)} exporter(s)...\n")
+def _subs_label(subs: list) -> str:
+    if len(subs) == 1:
+        return subs[0][1]
+    return f"{len(subs)} subscriptions"
+
+
+def _run_exporter_across(path: str, label: str, subs: list) -> None:
+    for sub_id, sub_name in subs:
+        if len(subs) > 1:
+            print(f"  [{sub_name}]", end=" ", flush=True)
+        _run_exporter(path, sub_id, sub_name)
+
+
+def _run_all_exporters(exporters: list, subs: list) -> None:
+    print(f"\nRunning {len(exporters)} exporter(s) across {_subs_label(subs)}...\n")
     failed = []
-    for label, path in exporters:
-        print(f"  → {label}...", end=" ", flush=True)
-        rc = _run_exporter(path, sub_id, sub_name)
-        if rc == 0:
-            print("done")
-        else:
-            print(f"FAILED (exit {rc})")
-            failed.append(label)
+    for sub_id, sub_name in subs:
+        if len(subs) > 1:
+            print(f"=== Subscription: {sub_name} ({sub_id}) ===")
+        for label, path in exporters:
+            print(f"  → {label}...", end=" ", flush=True)
+            rc = _run_exporter(path, sub_id, sub_name)
+            if rc == 0:
+                print("done")
+            else:
+                print(f"FAILED (exit {rc})")
+                failed.append(f"{label} [{sub_name}]" if len(subs) > 1 else label)
+        if len(subs) > 1:
+            print()
     print()
+    total = len(exporters) * len(subs)
     if failed:
-        print(f"Completed with {len(failed)} failure(s): {', '.join(failed)}")
+        print(f"Completed with {len(failed)}/{total} failure(s): {', '.join(failed)}")
     else:
-        print(f"All {len(exporters)} exporter(s) completed successfully.")
+        print(f"All {total} exporter run(s) completed successfully.")
 
 
 def _package_outputs() -> None:
@@ -214,11 +255,11 @@ def _package_outputs() -> None:
 # Menus
 # ---------------------------------------------------------------------------
 
-def menu_tier1(sub_id: str, sub_name: str) -> None:
+def _run_tier_menu(title: str, exporters: list, subs: list) -> None:
     while True:
-        options = [label for label, _ in TIER1_EXPORTERS] + ["Run All Tier 1 Exporters"]
+        options = [label for label, _ in exporters] + [f"Run All {title} Exporters"]
         choice = utils.prompt_menu(
-            f"TIER 1 EXPORTERS  ({sub_name})",
+            f"{title.upper()} EXPORTERS  ({_subs_label(subs)})",
             options,
             allow_back=True,
             allow_exit=True,
@@ -228,78 +269,36 @@ def menu_tier1(sub_id: str, sub_name: str) -> None:
         if choice == "exit":
             sys.exit(0)
         if choice == len(options):
-            _run_all_exporters(TIER1_EXPORTERS, sub_id, sub_name)
+            _run_all_exporters(exporters, subs)
         else:
-            label, path = TIER1_EXPORTERS[choice - 1]
+            label, path = exporters[choice - 1]
             print(f"\nRunning: {label}")
-            _run_exporter(path, sub_id, sub_name)
+            _run_exporter_across(path, label, subs)
 
 
-def menu_tier2(sub_id: str, sub_name: str) -> None:
-    while True:
-        options = [label for label, _ in TIER2_EXPORTERS] + ["Run All Tier 2 Exporters"]
-        choice = utils.prompt_menu(
-            f"TIER 2 EXPORTERS  ({sub_name})",
-            options,
-            allow_back=True,
-            allow_exit=True,
-        )
-        if choice == "back":
-            return
-        if choice == "exit":
-            sys.exit(0)
-        if choice == len(options):
-            _run_all_exporters(TIER2_EXPORTERS, sub_id, sub_name)
-        else:
-            label, path = TIER2_EXPORTERS[choice - 1]
-            print(f"\nRunning: {label}")
-            _run_exporter(path, sub_id, sub_name)
+def menu_tier1(subs: list) -> None:
+    _run_tier_menu("Tier 1", TIER1_EXPORTERS, subs)
 
 
-def menu_governance(sub_id: str, sub_name: str) -> None:
-    while True:
-        options = [label for label, _ in GOVERNANCE_EXPORTERS] + ["Run All Governance Exporters"]
-        choice = utils.prompt_menu(
-            f"GOVERNANCE EXPORTERS  ({sub_name})",
-            options,
-            allow_back=True,
-            allow_exit=True,
-        )
-        if choice == "back":
-            return
-        if choice == "exit":
-            sys.exit(0)
-        if choice == len(options):
-            _run_all_exporters(GOVERNANCE_EXPORTERS, sub_id, sub_name)
-        else:
-            label, path = GOVERNANCE_EXPORTERS[choice - 1]
-            print(f"\nRunning: {label}")
-            _run_exporter(path, sub_id, sub_name)
+def menu_tier2(subs: list) -> None:
+    _run_tier_menu("Tier 2", TIER2_EXPORTERS, subs)
 
 
-def menu_monitoring(sub_id: str, sub_name: str) -> None:
-    while True:
-        options = [label for label, _ in MONITORING_EXPORTERS] + ["Run All Monitoring Exporters"]
-        choice = utils.prompt_menu(
-            f"MONITORING EXPORTERS  ({sub_name})",
-            options,
-            allow_back=True,
-            allow_exit=True,
-        )
-        if choice == "back":
-            return
-        if choice == "exit":
-            sys.exit(0)
-        if choice == len(options):
-            _run_all_exporters(MONITORING_EXPORTERS, sub_id, sub_name)
-        else:
-            label, path = MONITORING_EXPORTERS[choice - 1]
-            print(f"\nRunning: {label}")
-            _run_exporter(path, sub_id, sub_name)
+def menu_governance(subs: list) -> None:
+    _run_tier_menu("Governance", GOVERNANCE_EXPORTERS, subs)
 
 
-def menu_main(sub_id: str, sub_name: str) -> None:
+def menu_monitoring(subs: list) -> None:
+    _run_tier_menu("Monitoring", MONITORING_EXPORTERS, subs)
+
+
+def menu_main(subs: list) -> None:
     _print_banner()
+    if len(subs) > 1:
+        print(f"  Scanning {len(subs)} subscriptions:")
+        for _, sname in subs:
+            print(f"    • {sname}")
+        print()
     while True:
         options = [
             "Tier 1 Exporters   (Core infrastructure: VMs, VNets, Storage, Key Vault, RBAC…)",
@@ -311,7 +310,7 @@ def menu_main(sub_id: str, sub_name: str) -> None:
             "Configure           (subscription selection, environment settings)",
         ]
         choice = utils.prompt_menu(
-            "AZURESCAN MAIN MENU",
+            f"STRATUSSCAN MAIN MENU  ({_subs_label(subs)})",
             options,
             allow_back=False,
             allow_exit=True,
@@ -320,22 +319,26 @@ def menu_main(sub_id: str, sub_name: str) -> None:
             print("Goodbye.")
             sys.exit(0)
         if choice == 1:
-            menu_tier1(sub_id, sub_name)
+            menu_tier1(subs)
         elif choice == 2:
-            menu_tier2(sub_id, sub_name)
+            menu_tier2(subs)
         elif choice == 3:
-            menu_governance(sub_id, sub_name)
+            menu_governance(subs)
         elif choice == 4:
-            menu_monitoring(sub_id, sub_name)
+            menu_monitoring(subs)
         elif choice == 5:
-            _run_all_exporters(TIER1_EXPORTERS + TIER2_EXPORTERS + GOVERNANCE_EXPORTERS + MONITORING_EXPORTERS, sub_id, sub_name)
+            _run_all_exporters(
+                TIER1_EXPORTERS + TIER2_EXPORTERS + GOVERNANCE_EXPORTERS + MONITORING_EXPORTERS,
+                subs,
+            )
         elif choice == 6:
             _package_outputs()
         elif choice == 7:
             subprocess.run([sys.executable, str(Path(__file__).parent / "configure.py")])
-            # Reload config after configure
+            # Reload config after configure, then re-resolve active subscriptions
             import importlib
             importlib.reload(utils)
+            subs = _active_subscriptions() or subs
 
 
 # ---------------------------------------------------------------------------
@@ -343,18 +346,25 @@ def menu_main(sub_id: str, sub_name: str) -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    sub_id, sub_name = _resolve_subscription()
-
     if utils.is_auto_run():
         auto_subs = utils.get_auto_subscriptions()
-        all_subs = auto_subs if auto_subs else [sub_id]
-        for sid in all_subs:
-            sname = utils.get_subscription_name(sid)
-            print(f"\nAuto-run: scanning subscription {sname} ({sid})")
-            _run_all_exporters(TIER1_EXPORTERS + TIER2_EXPORTERS + GOVERNANCE_EXPORTERS + MONITORING_EXPORTERS, sid, sname)
+        if not auto_subs:
+            sub_id, _ = _resolve_subscription()
+            auto_subs = [sub_id]
+        subs = [(sid, utils.get_subscription_name(sid)) for sid in auto_subs]
+        print(f"\nAuto-run: scanning {_subs_label(subs)}")
+        _run_all_exporters(
+            TIER1_EXPORTERS + TIER2_EXPORTERS + GOVERNANCE_EXPORTERS + MONITORING_EXPORTERS,
+            subs,
+        )
         return
 
-    menu_main(sub_id, sub_name)
+    subs = _active_subscriptions()
+    if not subs:
+        print("\nNo subscription configured. Run configure.py first.")
+        print("  python configure.py")
+        sys.exit(1)
+    menu_main(subs)
 
 
 if __name__ == "__main__":

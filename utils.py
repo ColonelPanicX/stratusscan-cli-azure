@@ -592,6 +592,27 @@ def get_subscription_name(subscription_id: str) -> str:
     return subscription_id
 
 
+def resolve_target_subscription() -> tuple:
+    """
+    Return (subscription_id, subscription_name) for an exporter run.
+
+    Prefers the subscription injected by stratusscan.py via the
+    STRATUSSCAN_SUBSCRIPTION_ID / _NAME env vars — this is how multi-subscription
+    runs target each subscription in turn. Falls back to the configured default
+    when an exporter is run directly. Returns ("", "") when nothing is configured.
+    """
+    sub_id = os.environ.get("STRATUSSCAN_SUBSCRIPTION_ID", "").strip()
+    if sub_id:
+        sub_name = os.environ.get("STRATUSSCAN_SUBSCRIPTION_NAME", "").strip()
+        return sub_id, (sub_name or get_subscription_name(sub_id))
+
+    cfg = get_config()
+    sub_id = cfg.get("default_subscription_id", "")
+    if not sub_id:
+        return "", ""
+    return sub_id, get_subscription_name(sub_id)
+
+
 # ---------------------------------------------------------------------------
 # Interactive menu (shared by stratusscan.py and configure.py)
 # ---------------------------------------------------------------------------
