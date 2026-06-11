@@ -52,6 +52,7 @@ TIER1_EXPORTERS = [
     ("Public IP Addresses",            "public_ips_export.py"),
     ("Storage Accounts",               "storage_accounts_export.py"),
     ("Key Vaults",                     "key_vault_export.py"),
+    ("Key Vault Objects (Keys/Secrets/Certs)", "key_vault_objects_export.py"),
     ("RBAC Role Assignments",          "role_assignments_export.py"),
 ]
 

@@ -20,10 +20,24 @@ returns data and changes nothing, but it is **not** covered by
 
 ### Why no `DataActions`
 
-Every exporter uses the management plane. Data-plane inventory (e.g. enumerating
-individual Key Vault keys/secrets/certs — see deferred issue SSAZR-065) would require
-`DataActions` and per-resource data-plane role assignments that this role deliberately
-does not grant. Keeping `DataActions` empty is what makes "read-only" auditable.
+Almost every exporter uses the management plane, and **StratusScan Reader** is a pure
+management-plane role: `DataActions` is empty, which is what makes "read-only"
+auditable.
+
+The one data-plane exporter — `key_vault_objects_export.py` (Key Vault
+keys/secrets/certificates metadata) — is **not** covered by this role and is not meant
+to be. It reads the Key Vault data plane, which requires per-vault data-plane access
+the management role does not grant. To run it, additionally assign the scanning
+principal one of:
+
+- **RBAC vaults** (`enableRbacAuthorization = true`): the built-in **Key Vault Reader**
+  role (lists keys/secrets/certs metadata without exposing secret values), scoped to
+  the vault, subscription, or management group.
+- **Access-policy vaults**: a vault access policy granting **List** on keys, secrets,
+  and certificates.
+
+Vaults the principal cannot read are skipped with a logged warning, so the exporter is
+safe to run with partial coverage. It never reads secret/key *values* — metadata only.
 
 ## Creating the role
 
