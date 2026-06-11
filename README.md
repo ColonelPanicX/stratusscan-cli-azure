@@ -36,9 +36,13 @@ The tool is designed to work in a fresh [Azure Cloud Shell](https://shell.azure.
 ```bash
 git clone https://github.com/ColonelPanicX/stratusscan-cli-azure.git
 cd stratusscan-cli-azure
-python configure.py
 python stratusscan.py
 ```
+
+On first run with no config, StratusScan auto-detects the Azure cloud (public vs
+government) and discovers every accessible subscription — no setup step required.
+Run `python configure.py` only if you want to **narrow** to specific subscriptions
+or persist a choice.
 
 ### Local Machine
 
@@ -48,14 +52,14 @@ Requires [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) in
 git clone https://github.com/ColonelPanicX/stratusscan-cli-azure.git
 cd stratusscan-cli-azure
 
-# Authenticate
+# Authenticate (StratusScan auto-detects the cloud and subscriptions from this)
 az login
 
-# Configure subscription and environment
-python configure.py
-
-# Launch StratusScan
+# Launch StratusScan — discovers everything on first run
 python stratusscan.py
+
+# Optional: narrow to specific subscriptions / persist a choice
+python configure.py
 ```
 
 ### pip install (once published)
