@@ -105,6 +105,8 @@ GOVERNANCE_EXPORTERS = [
     ("Resource Locks",                 "resource_locks_export.py"),
     ("Resource Tags Inventory",        "resource_tags_export.py"),
     ("Custom Policy Definitions",      "policy_definitions_export.py"),
+    ("Policy Compliance State",        "policy_compliance_export.py"),
+    ("Managed Identities",             "managed_identities_export.py"),
     ("Cost Management (Month-to-Date)", "cost_management_export.py"),
 ]
 
