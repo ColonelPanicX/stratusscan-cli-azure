@@ -81,6 +81,28 @@ def test_detect_environment_from_config_when_env_absent(monkeypatch):
     assert utils.detect_environment() == "government"
 
 
+def test_detect_azure_cloud_reads_az_config(monkeypatch, tmp_path):
+    (tmp_path / "config").write_text("[cloud]\nname = AzureUSGovernment\n")
+    monkeypatch.setenv("AZURE_CONFIG_DIR", str(tmp_path))
+    assert utils.detect_azure_cloud() == "government"
+
+    (tmp_path / "config").write_text("[cloud]\nname = AzureCloud\n")
+    assert utils.detect_azure_cloud() == "public"
+
+
+def test_detect_azure_cloud_returns_none_when_absent(monkeypatch, tmp_path):
+    monkeypatch.setenv("AZURE_CONFIG_DIR", str(tmp_path))  # empty dir, no config file
+    assert utils.detect_azure_cloud() is None
+
+
+def test_detect_environment_autodetects_when_unconfigured(monkeypatch, tmp_path):
+    monkeypatch.delenv("AZURE_ENVIRONMENT", raising=False)
+    # no config.json on disk → falls through to az auto-detect
+    monkeypatch.setattr(utils.Path, "exists", lambda self: False)
+    monkeypatch.setattr(utils, "detect_azure_cloud", lambda: "government")
+    assert utils.detect_environment() == "government"
+
+
 def test_is_service_available_in_environment_contract():
     assert utils.is_service_available_in_environment("compute", "public") is True
     assert utils.is_service_available_in_environment("network", "government") is True
