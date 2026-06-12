@@ -21,7 +21,17 @@ log = utils.get_logger()
 def collect_namespaces(subscription_id: str) -> list:
     client = utils.get_azure_client("eventhub", subscription_id)
     log.info("Listing Event Hubs namespaces in subscription %s", subscription_id)
-    return list(client.namespaces.list_by_subscription())
+    if hasattr(client.namespaces, "list_by_subscription"):
+        return list(client.namespaces.list_by_subscription())
+
+    resource = utils.get_azure_client("resource", subscription_id)
+    namespaces = []
+    for rg in resource.resource_groups.list():
+        try:
+            namespaces.extend(client.namespaces.list_by_resource_group(rg.name))
+        except Exception as exc:
+            log.warning("Failed to list Event Hubs namespaces in %s: %s", rg.name, exc)
+    return namespaces
 
 
 def main(subscription_id: str, subscription_name: str) -> None:
