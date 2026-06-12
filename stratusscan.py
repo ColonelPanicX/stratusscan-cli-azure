@@ -217,6 +217,49 @@ def _subs_label(subs: list) -> str:
     return f"{len(subs)} subscriptions"
 
 
+def _primary_subscription(subs: list) -> list:
+    """
+    Return a single-subscription list for the default Run-All target: the
+    configured default subscription if it is among the active ones, otherwise
+    the first.
+    """
+    default_id = utils.get_config().get("default_subscription_id", "")
+    if default_id:
+        for pair in subs:
+            if pair[0] == default_id:
+                return [pair]
+    return subs[:1]
+
+
+def _select_run_all_subs(subs: list):
+    """
+    Run-All scans one subscription by default to stay Cloud Shell-friendly
+    (running every exporter across many subscriptions can exceed the session
+    timeout). With more than one active subscription, require an explicit
+    opt-in to scan them all.
+
+    Returns the chosen (id, name) list, or None if the user backs out.
+    """
+    if len(subs) <= 1:
+        return subs
+    primary = _primary_subscription(subs)
+    options = [
+        f"{primary[0][1]} only  (current subscription — recommended)",
+        f"All {len(subs)} subscriptions  (slower — may time out in Cloud Shell)",
+    ]
+    choice = utils.prompt_menu(
+        "RUN ALL — SELECT SCOPE",
+        options,
+        allow_back=True,
+        allow_exit=False,
+    )
+    if choice == "back":
+        return None
+    if choice == 2:
+        return subs
+    return primary
+
+
 def _run_exporter_across(path: str, label: str, subs: list) -> None:
     for sub_id, sub_name in subs:
         if len(subs) > 1:
@@ -278,7 +321,9 @@ def _run_tier_menu(title: str, exporters: list, subs: list) -> None:
         if choice == "exit":
             sys.exit(0)
         if choice == len(options):
-            _run_all_exporters(exporters, subs, package_outputs=True)
+            target = _select_run_all_subs(subs)
+            if target:
+                _run_all_exporters(exporters, target, package_outputs=True)
         else:
             label, path = exporters[choice - 1]
             print(f"\nRunning: {label}")
@@ -304,9 +349,10 @@ def menu_monitoring(subs: list) -> None:
 def menu_main(subs: list) -> None:
     _print_banner()
     if len(subs) > 1:
-        print(f"  Scanning {len(subs)} subscriptions:")
+        print(f"  {len(subs)} subscriptions available:")
         for _, sname in subs:
             print(f"    • {sname}")
+        print("  (Run All scans one by default — choose scope when prompted.)")
         print()
     while True:
         options = [
@@ -336,11 +382,13 @@ def menu_main(subs: list) -> None:
         elif choice == 4:
             menu_monitoring(subs)
         elif choice == 5:
-            _run_all_exporters(
-                TIER1_EXPORTERS + TIER2_EXPORTERS + GOVERNANCE_EXPORTERS + MONITORING_EXPORTERS,
-                subs,
-                package_outputs=True,
-            )
+            target = _select_run_all_subs(subs)
+            if target:
+                _run_all_exporters(
+                    TIER1_EXPORTERS + TIER2_EXPORTERS + GOVERNANCE_EXPORTERS + MONITORING_EXPORTERS,
+                    target,
+                    package_outputs=True,
+                )
         elif choice == 6:
             _package_outputs()
         elif choice == 7:

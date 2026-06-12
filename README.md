@@ -152,6 +152,8 @@ python stratusscan.py
 
 Select **Tier 1** or **Tier 2** from the menu, then pick an individual exporter or run all. Exports are saved to `output/` as `.xlsx` files.
 
+When multiple subscriptions are accessible, **Run All** scans a single subscription by default (the configured default, otherwise the first) to stay within the Cloud Shell session timeout. Choosing Run All prompts for scope, where scanning every subscription is an explicit opt-in. Running an individual exporter still fans out across all accessible subscriptions.
+
 ### Direct script execution
 
 Every exporter can run standalone:
