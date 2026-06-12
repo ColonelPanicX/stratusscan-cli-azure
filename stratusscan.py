@@ -278,7 +278,7 @@ def _run_tier_menu(title: str, exporters: list, subs: list) -> None:
         if choice == "exit":
             sys.exit(0)
         if choice == len(options):
-            _run_all_exporters(exporters, subs)
+            _run_all_exporters(exporters, subs, package_outputs=True)
         else:
             label, path = exporters[choice - 1]
             print(f"\nRunning: {label}")
