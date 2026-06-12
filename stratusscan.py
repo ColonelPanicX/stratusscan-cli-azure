@@ -224,7 +224,7 @@ def _run_exporter_across(path: str, label: str, subs: list) -> None:
         _run_exporter(path, sub_id, sub_name)
 
 
-def _run_all_exporters(exporters: list, subs: list) -> None:
+def _run_all_exporters(exporters: list, subs: list, package_outputs: bool = False) -> None:
     print(f"\nRunning {len(exporters)} exporter(s) across {_subs_label(subs)}...\n")
     failed = []
     for sub_id, sub_name in subs:
@@ -246,6 +246,9 @@ def _run_all_exporters(exporters: list, subs: list) -> None:
         print(f"Completed with {len(failed)}/{total} failure(s): {', '.join(failed)}")
     else:
         print(f"All {total} exporter run(s) completed successfully.")
+
+    if package_outputs:
+        _package_outputs()
 
 
 def _package_outputs() -> None:
@@ -336,6 +339,7 @@ def menu_main(subs: list) -> None:
             _run_all_exporters(
                 TIER1_EXPORTERS + TIER2_EXPORTERS + GOVERNANCE_EXPORTERS + MONITORING_EXPORTERS,
                 subs,
+                package_outputs=True,
             )
         elif choice == 6:
             _package_outputs()
@@ -365,6 +369,7 @@ def main() -> None:
         _run_all_exporters(
             TIER1_EXPORTERS + TIER2_EXPORTERS + GOVERNANCE_EXPORTERS + MONITORING_EXPORTERS,
             subs,
+            package_outputs=True,
         )
         return
 
