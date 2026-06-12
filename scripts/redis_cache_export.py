@@ -21,7 +21,17 @@ log = utils.get_logger()
 def collect_caches(subscription_id: str) -> list:
     client = utils.get_azure_client("redis", subscription_id)
     log.info("Listing Redis caches in subscription %s", subscription_id)
-    return list(client.redis.list())
+    if hasattr(client.redis, "list"):
+        return list(client.redis.list())
+
+    resource = utils.get_azure_client("resource", subscription_id)
+    caches = []
+    for rg in resource.resource_groups.list():
+        try:
+            caches.extend(client.redis.list_by_resource_group(rg.name))
+        except Exception as exc:
+            log.warning("Failed to list Redis caches in %s: %s", rg.name, exc)
+    return caches
 
 
 def main(subscription_id: str, subscription_name: str) -> None:

@@ -21,7 +21,17 @@ log = utils.get_logger()
 def collect_services(subscription_id: str) -> list:
     client = utils.get_azure_client("apimanagement", subscription_id)
     log.info("Listing API Management services in subscription %s", subscription_id)
-    return list(client.api_management_service.list())
+    if hasattr(client.api_management_service, "list"):
+        return list(client.api_management_service.list())
+
+    resource = utils.get_azure_client("resource", subscription_id)
+    services = []
+    for rg in resource.resource_groups.list():
+        try:
+            services.extend(client.api_management_service.list_by_resource_group(rg.name))
+        except Exception as exc:
+            log.warning("Failed to list API Management services in %s: %s", rg.name, exc)
+    return services
 
 
 def main(subscription_id: str, subscription_name: str) -> None:

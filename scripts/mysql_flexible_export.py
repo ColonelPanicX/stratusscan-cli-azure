@@ -21,7 +21,17 @@ log = utils.get_logger()
 def collect_servers(subscription_id: str) -> list:
     client = utils.get_azure_client("mysql", subscription_id)
     log.info("Listing MySQL flexible servers in subscription %s", subscription_id)
-    return list(client.servers.list())
+    if hasattr(client.servers, "list"):
+        return list(client.servers.list())
+
+    resource = utils.get_azure_client("resource", subscription_id)
+    servers = []
+    for rg in resource.resource_groups.list():
+        try:
+            servers.extend(client.servers.list_by_resource_group(rg.name))
+        except Exception as exc:
+            log.warning("Failed to list MySQL flexible servers in %s: %s", rg.name, exc)
+    return servers
 
 
 def main(subscription_id: str, subscription_name: str) -> None:

@@ -21,7 +21,17 @@ log = utils.get_logger()
 def collect_workflows(subscription_id: str) -> list:
     client = utils.get_azure_client("logic", subscription_id)
     log.info("Listing Logic App workflows in subscription %s", subscription_id)
-    return list(client.workflows.list_by_subscription())
+    if hasattr(client.workflows, "list_by_subscription"):
+        return list(client.workflows.list_by_subscription())
+
+    resource = utils.get_azure_client("resource", subscription_id)
+    workflows = []
+    for rg in resource.resource_groups.list():
+        try:
+            workflows.extend(client.workflows.list_by_resource_group(rg.name))
+        except Exception as exc:
+            log.warning("Failed to list Logic App workflows in %s: %s", rg.name, exc)
+    return workflows
 
 
 def main(subscription_id: str, subscription_name: str) -> None:
