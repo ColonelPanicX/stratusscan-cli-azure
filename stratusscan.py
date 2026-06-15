@@ -267,7 +267,12 @@ def _run_exporter_across(path: str, label: str, subs: list) -> None:
         _run_exporter(path, sub_id, sub_name)
 
 
-def _run_all_exporters(exporters: list, subs: list, package_outputs: bool = False) -> None:
+def _run_all_exporters(
+    exporters: list,
+    subs: list,
+    package_outputs: bool = False,
+    package_label: str | None = None,
+) -> None:
     print(f"\nRunning {len(exporters)} exporter(s) across {_subs_label(subs)}...\n")
     failed = []
     for sub_id, sub_name in subs:
@@ -291,11 +296,11 @@ def _run_all_exporters(exporters: list, subs: list, package_outputs: bool = Fals
         print(f"All {total} exporter run(s) completed successfully.")
 
     if package_outputs:
-        _package_outputs()
+        _package_outputs(package_label)
 
 
-def _package_outputs() -> None:
-    zip_path = utils.archive_outputs()
+def _package_outputs(label: str | None = None) -> None:
+    zip_path = utils.archive_outputs(label)
     if not zip_path:
         print("\nNo exports found in output/ to package.")
         return
@@ -323,7 +328,12 @@ def _run_tier_menu(title: str, exporters: list, subs: list) -> None:
         if choice == len(options):
             target = _select_run_all_subs(subs)
             if target:
-                _run_all_exporters(exporters, target, package_outputs=True)
+                _run_all_exporters(
+                    exporters,
+                    target,
+                    package_outputs=True,
+                    package_label=title.replace(" ", "").lower(),
+                )
         else:
             label, path = exporters[choice - 1]
             print(f"\nRunning: {label}")
@@ -388,6 +398,7 @@ def menu_main(subs: list) -> None:
                     TIER1_EXPORTERS + TIER2_EXPORTERS + GOVERNANCE_EXPORTERS + MONITORING_EXPORTERS,
                     target,
                     package_outputs=True,
+                    package_label="all",
                 )
         elif choice == 6:
             _package_outputs()
@@ -418,6 +429,7 @@ def main() -> None:
             TIER1_EXPORTERS + TIER2_EXPORTERS + GOVERNANCE_EXPORTERS + MONITORING_EXPORTERS,
             subs,
             package_outputs=True,
+            package_label="all",
         )
         return
 
