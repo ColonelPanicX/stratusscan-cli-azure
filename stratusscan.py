@@ -15,6 +15,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from typing import Optional
 
 # Ensure local modules are importable from the project root.
 sys.path.insert(0, str(Path(__file__).parent))
@@ -271,7 +272,7 @@ def _run_all_exporters(
     exporters: list,
     subs: list,
     package_outputs: bool = False,
-    package_label: str | None = None,
+    package_label: Optional[str] = None,
 ) -> None:
     print(f"\nRunning {len(exporters)} exporter(s) across {_subs_label(subs)}...\n")
     failed = []
@@ -299,7 +300,7 @@ def _run_all_exporters(
         _package_outputs(package_label)
 
 
-def _package_outputs(label: str | None = None) -> None:
+def _package_outputs(label: Optional[str] = None) -> None:
     zip_path = utils.archive_outputs(label)
     if not zip_path:
         print("\nNo exports found in output/ to package.")
