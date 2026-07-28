@@ -18,10 +18,48 @@ utils.log_script_start("virtual_machines_export.py", "Azure Virtual Machines Exp
 log = utils.get_logger()
 
 
-def collect_vms(subscription_id: str) -> list:
-    client = utils.get_azure_client("compute", subscription_id)
-    log.info("Listing all VMs in subscription %s", subscription_id)
+def collect_vms(client) -> list:
     return list(client.virtual_machines.list_all())
+
+
+def collect_power_states(client) -> dict:
+    """Map lowercased VM resource id to power state via one status-scoped list call.
+
+    `list_all()` alone never populates `instance_view`, so power state has to come
+    from a second, status-only pass. The two calls are kept separate because the
+    statusOnly payload is not guaranteed to carry the inventory properties
+    (size, image, zones, tags) the export also needs.
+    """
+    states = {}
+    try:
+        for vm in client.virtual_machines.list_all(status_only="true"):
+            state = _power_state_from_statuses(getattr(vm.instance_view, "statuses", None))
+            if vm.id and state:
+                states[vm.id.lower()] = state
+    except Exception as e:
+        log.warning("statusOnly VM listing failed (%s) — falling back to per-VM instance view", e)
+    return states
+
+
+def _power_state_from_statuses(statuses) -> str:
+    if not statuses:
+        return ""
+    for s in statuses:
+        code = getattr(s, "code", None)
+        if code and code.startswith("PowerState/"):
+            return code.replace("PowerState/", "")
+    return ""
+
+
+def _instance_view_power_state(client, resource_group: str, name: str) -> str:
+    if not resource_group or not name:
+        return ""
+    try:
+        view = client.virtual_machines.instance_view(resource_group, name)
+        return _power_state_from_statuses(getattr(view, "statuses", None))
+    except Exception as e:
+        log.warning("Instance view failed for VM %s: %s", name, e)
+        return ""
 
 
 def _get_os_type(vm) -> str:
@@ -34,15 +72,11 @@ def _get_os_type(vm) -> str:
     return ""
 
 
-def _get_status(vm) -> str:
-    try:
-        if vm.instance_view and vm.instance_view.statuses:
-            for s in vm.instance_view.statuses:
-                if s.code and s.code.startswith("PowerState/"):
-                    return s.code.replace("PowerState/", "")
-    except Exception:
-        pass
-    return "unknown"
+def _get_status(client, vm, states: dict, resource_group: str) -> str:
+    state = states.get(vm.id.lower(), "") if vm.id else ""
+    if not state:
+        state = _instance_view_power_state(client, resource_group, vm.name)
+    return state or "unknown"
 
 
 def main(subscription_id: str, subscription_name: str) -> None:
@@ -50,10 +84,15 @@ def main(subscription_id: str, subscription_name: str) -> None:
     if not utils.is_service_available_in_environment("compute", environment):
         sys.exit(0)
 
-    vms = collect_vms(subscription_id)
+    client = utils.get_azure_client("compute", subscription_id)
+    log.info("Listing all VMs in subscription %s", subscription_id)
+    vms = collect_vms(client)
     if not vms:
         print("No virtual machines found.")
         return
+
+    states = collect_power_states(client)
+    log.info("Resolved power state for %d of %d VMs from statusOnly listing", len(states), len(vms))
 
     rows = []
     for vm in vms:
@@ -73,7 +112,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
                 and vm.storage_profile.image_reference.publisher
                 else ""
             ),
-            "Power State": _get_status(vm),
+            "Power State": _get_status(client, vm, states, rg),
             "Provisioning State": vm.provisioning_state or "",
             "Zones": ", ".join(vm.zones) if vm.zones else "",
             "Tags": "; ".join(f"{k}={v}" for k, v in tags.items()),
