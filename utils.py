@@ -182,7 +182,7 @@ def extract_resource_group(resource_id: Optional[str]) -> str:
     return ""
 
 
-def archive_outputs() -> Optional[str]:
+def archive_outputs(label: Optional[str] = None) -> Optional[str]:
     """
     Bundle every .xlsx in output/ into a single dated zip.
 
@@ -195,7 +195,8 @@ def archive_outputs() -> Optional[str]:
     if not exports:
         return None
 
-    zip_path = out_dir / f"exports-{get_current_timestamp()}.zip"
+    label_part = f"-{_sanitize_name(label).lower()}" if label else ""
+    zip_path = out_dir / f"exports{label_part}-{get_current_timestamp()}.zip"
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for export in exports:
             zf.write(export, arcname=export.name)

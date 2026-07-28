@@ -46,6 +46,19 @@ def test_create_export_filename_uppercases_and_sanitizes():
     assert name.startswith("A-B-C-D-")
 
 
+def test_archive_outputs_includes_optional_label(monkeypatch, tmp_path):
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    (output_dir / "sample.xlsx").write_text("xlsx")
+    monkeypatch.setattr(utils, "__file__", str(tmp_path / "utils.py"))
+    monkeypatch.setattr(utils, "get_current_timestamp", lambda: "06.15.2026")
+
+    zip_path = utils.archive_outputs("tier1")
+
+    assert zip_path is not None
+    assert zip_path.replace("\\", "/").endswith("/output/exports-tier1-06.15.2026.zip")
+
+
 def test_extract_resource_group_handles_casing_and_missing():
     assert (
         utils.extract_resource_group(
