@@ -31,15 +31,64 @@ def _parse_resource_id(resource_id: str) -> tuple:
     return rname, rtype
 
 
-def _extract_savings(extended_properties: dict) -> str:
-    if not extended_properties:
+_MONTHLY_SAVINGS_KEYS = ("savingsAmount", "monthlySavingsAmount")
+_ANNUAL_SAVINGS_KEYS = ("annualSavingsAmount", "estimatedAnnualSavings")
+
+
+def _to_number(value):
+    """Coerce an extendedProperties value to a number. ARM returns these as strings."""
+    if value is None or value == "":
         return ""
-    for key in ("savingsAmount", "annualSavingsAmount", "estimatedAnnualSavings", "savings"):
-        val = extended_properties.get(key)
-        if val is not None:
-            currency = extended_properties.get("savingsCurrency", "USD")
-            return f"{val} {currency}"
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return ""
+
+
+def _first_number(extended_properties: dict, keys):
+    for key in keys:
+        number = _to_number(extended_properties.get(key))
+        if number != "":
+            return number
     return ""
+
+
+def _extract_savings(extended_properties: dict) -> dict:
+    """Split Advisor savings into explicit monthly and annual fields.
+
+    Advisor cost recommendations expose both periods in extendedProperties. Emitting
+    one collapsed figure loses which period it came from — a 12x ambiguity. Keys that
+    are absent stay blank rather than being derived from the other period.
+    """
+    blank = {
+        "Potential Savings (Monthly)": "",
+        "Potential Savings (Annual)": "",
+        "Savings Currency": "",
+        "Reservation Term": "",
+        "Lookback (days)": "",
+        "Region": "",
+    }
+    if not extended_properties:
+        return blank
+
+    monthly = _first_number(extended_properties, _MONTHLY_SAVINGS_KEYS)
+    annual = _first_number(extended_properties, _ANNUAL_SAVINGS_KEYS)
+
+    currency = ""
+    if monthly != "" or annual != "":
+        currency = extended_properties.get("savingsCurrency") or "USD"
+
+    lookback = extended_properties.get("lookbackPeriod") or ""
+    lookback_number = _to_number(lookback)
+
+    return {
+        "Potential Savings (Monthly)": monthly,
+        "Potential Savings (Annual)": annual,
+        "Savings Currency": currency,
+        "Reservation Term": extended_properties.get("term") or "",
+        "Lookback (days)": lookback_number if lookback_number != "" else lookback,
+        "Region": extended_properties.get("region") or "",
+    }
 
 
 def collect_recommendations(subscription_id: str) -> list:
@@ -64,7 +113,7 @@ def collect_recommendations(subscription_id: str) -> list:
             if hasattr(last_updated, "isoformat"):
                 last_updated = last_updated.isoformat()
 
-            rows.append({
+            row = {
                 "Category": getattr(rec, "category", "") or "",
                 "Impact": getattr(rec, "impact", "") or "",
                 "Resource ID": resource_id,
@@ -72,9 +121,10 @@ def collect_recommendations(subscription_id: str) -> list:
                 "Resource Type": rtype or getattr(rec, "impacted_field", "") or "",
                 "Recommendation": problem,
                 "Solution": solution,
-                "Potential Savings": _extract_savings(extended),
-                "Last Updated": last_updated,
-            })
+            }
+            row.update(_extract_savings(extended))
+            row["Last Updated"] = last_updated
+            rows.append(row)
     except Exception as e:
         log.warning("Failed to list Advisor recommendations: %s", e)
 
