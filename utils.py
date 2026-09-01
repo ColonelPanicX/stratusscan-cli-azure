@@ -364,7 +364,7 @@ def detect_environment() -> str:
 
     Detection order:
     1. AZURE_ENVIRONMENT env var ('AzureUSGovernment' → 'government')
-    2. config.json 'environment' key (only if a config.json has been written)
+    2. config.json 'environment' key, when set to a real cloud (not 'auto')
     3. Auto-detected active Azure CLI cloud (Cloud Shell / `az cloud set`)
     4. Default: 'public'
     """
@@ -374,11 +374,10 @@ def detect_environment() -> str:
     if env_var in ("azurepubliccloud", "public", "azurecloud"):
         return "public"
 
-    config_path = Path(__file__).parent / "config.json"
-    if config_path.exists():
-        cfg = get_config()
-        if cfg.get("environment", "public").lower() in ("government", "azureusgovernment"):
-            return "government"
+    configured = get_config().get("environment", "").strip().lower()
+    if configured in ("government", "azureusgovernment"):
+        return "government"
+    if configured in ("public", "azurepubliccloud", "azurecloud"):
         return "public"
 
     detected = detect_azure_cloud()
@@ -425,6 +424,13 @@ class _GovernmentCredential:
         return self._credential.get_token(*gov_scopes, **kwargs)
 
 
+def _in_cloud_shell() -> bool:
+    """Return True when running inside Azure Cloud Shell."""
+    if os.environ.get("ACC_CLOUD"):
+        return True
+    return "cloud-shell" in os.environ.get("AZUREPS_HOST_ENVIRONMENT", "").lower()
+
+
 def _get_credential():
     """Return a cached DefaultAzureCredential, configured for the active environment."""
     global _credential_cache
@@ -436,13 +442,22 @@ def _get_credential():
         except ImportError as exc:
             raise ImportError("azure-identity is required: pip install azure-identity") from exc
 
+        # Cloud Shell's MSI endpoint rejects ARM audiences it does not serve and
+        # raises a hard error, which aborts the DefaultAzureCredential chain before
+        # it reaches the always-authenticated Azure CLI credential.
+        kwargs: Dict[str, Any] = {}
+        if _in_cloud_shell():
+            kwargs["exclude_managed_identity_credential"] = True
+
         environment = detect_environment()
         if environment == "government":
             _credential_cache = _GovernmentCredential(
-                DefaultAzureCredential(authority=AzureAuthorityHosts.AZURE_GOVERNMENT)
+                DefaultAzureCredential(
+                    authority=AzureAuthorityHosts.AZURE_GOVERNMENT, **kwargs
+                )
             )
         else:
-            _credential_cache = DefaultAzureCredential()
+            _credential_cache = DefaultAzureCredential(**kwargs)
         return _credential_cache
 
 
