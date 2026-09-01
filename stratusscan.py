@@ -180,6 +180,29 @@ def _autodiscover_subscriptions() -> list:
 # Subprocess launcher
 # ---------------------------------------------------------------------------
 
+_TRACEBACK_MARKER = "Traceback (most recent call last):"
+
+
+def _condense_stderr(stderr: str) -> str:
+    """
+    Pass warnings through untouched, but reduce a Python traceback to its final
+    line. A missing or incompatible Azure SDK should read as one line on the
+    console; the full traceback still goes to the log file.
+    """
+    if _TRACEBACK_MARKER not in stderr:
+        return stderr.rstrip()
+    head, _, trace = stderr.partition(_TRACEBACK_MARKER)
+    summary = next(
+        (
+            line.strip()
+            for line in reversed(trace.splitlines())
+            if line.strip() and not line[:1].isspace()
+        ),
+        "",
+    )
+    return "\n".join(part for part in (head.rstrip(), summary) if part)
+
+
 def _run_exporter(script_rel_path: str, sub_id: str, sub_name: str) -> int:
     script_path = SCRIPTS_DIR / script_rel_path
     if not script_path.exists():
@@ -193,7 +216,17 @@ def _run_exporter(script_rel_path: str, sub_id: str, sub_name: str) -> int:
     result = subprocess.run(
         [sys.executable, str(script_path)],
         env=env,
+        stderr=subprocess.PIPE,
+        text=True,
     )
+    if result.stderr:
+        if result.returncode != 0:
+            utils.get_logger().error(
+                "%s failed (exit %d):\n%s", script_rel_path, result.returncode, result.stderr
+            )
+        message = _condense_stderr(result.stderr)
+        if message:
+            print(message, file=sys.stderr)
     return result.returncode
 
 

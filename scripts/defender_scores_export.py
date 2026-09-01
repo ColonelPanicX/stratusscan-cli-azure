@@ -57,7 +57,12 @@ def collect_defender_plans(subscription_id: str) -> list:
 
     rows = []
     try:
-        result = client.pricings.list()
+        # azure-mgmt-security 7.0.0 defaults to the 2024-01-01 pricings API,
+        # which requires an explicit scope; older versions take no arguments.
+        try:
+            result = client.pricings.list(f"subscriptions/{subscription_id}")
+        except TypeError:
+            result = client.pricings.list()
         pricings = result.value if hasattr(result, "value") else list(result)
         for p in pricings:
             rows.append({

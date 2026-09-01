@@ -489,7 +489,12 @@ _CLIENT_MAP: Dict[str, tuple] = {
     "cosmosdb": ("azure.mgmt.cosmosdb", "CosmosDBManagementClient", True),
     "policy": ("azure.mgmt.resource.policy", "PolicyClient", True),
     "locks": ("azure.mgmt.resource.locks", "ManagementLockClient", True),
-    "managementgroups": ("azure.mgmt.managementgroups", "ManagementGroupsAPI", False),
+    # azure-mgmt-managementgroups 2.0.0 renamed ManagementGroupsAPI
+    "managementgroups": (
+        "azure.mgmt.managementgroups",
+        ("ManagementGroupsMgmtClient", "ManagementGroupsAPI"),
+        False,
+    ),
     "security": ("azure.mgmt.security", "SecurityCenter", True),
     "advisor": ("azure.mgmt.advisor", "AdvisorManagementClient", True),
     "monitor": ("azure.mgmt.monitor", "MonitorManagementClient", True),
@@ -553,10 +558,17 @@ def get_azure_client(service_name: str, subscription_id: Optional[str] = None) -
     try:
         import importlib
         mod = importlib.import_module(module_path)
-        cls = getattr(mod, class_name)
     except ImportError as exc:
         pkg = module_path.replace(".", "-")
         raise ImportError(f"Missing package: pip install {pkg}") from exc
+
+    candidates = (class_name,) if isinstance(class_name, str) else tuple(class_name)
+    cls = next((getattr(mod, name) for name in candidates if hasattr(mod, name)), None)
+    if cls is None:
+        raise ImportError(
+            f"{module_path} exposes none of {list(candidates)} — "
+            f"the installed SDK version is incompatible."
+        )
 
     cred = _get_credential()
     environment = detect_environment()
