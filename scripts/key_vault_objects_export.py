@@ -63,6 +63,20 @@ def collect_vault_uris(subscription_id: str) -> list:
     return uris
 
 
+def _log_skip(object_kind: str, vault_name: str, exc: Exception) -> None:
+    """
+    Log one short line for an expected data-plane denial; keep the full detail
+    for anything unexpected. Azure returns a multi-paragraph Forbidden body that
+    would otherwise repeat three times per vault.
+    """
+    if getattr(exc, "status_code", None) in (401, 403):
+        log.warning(
+            "Skipping %s for vault %s — no data-plane access.", object_kind, vault_name
+        )
+    else:
+        log.warning("Skipping %s for vault %s: %s", object_kind, vault_name, exc)
+
+
 def _collect_keys(vault_name: str, uri: str, credential) -> list:
     rows = []
     try:
@@ -81,7 +95,7 @@ def _collect_keys(vault_name: str, uri: str, credential) -> list:
                 "Recovery Level": kp.recovery_level or "",
             })
     except Exception as exc:
-        log.warning("Skipping keys for vault %s (no data-plane access?): %s", vault_name, exc)
+        _log_skip("keys", vault_name, exc)
     return rows
 
 
@@ -103,7 +117,7 @@ def _collect_secrets(vault_name: str, uri: str, credential) -> list:
                 "Days Until Expiry": _days_until(sp.expires_on),
             })
     except Exception as exc:
-        log.warning("Skipping secrets for vault %s (no data-plane access?): %s", vault_name, exc)
+        _log_skip("secrets", vault_name, exc)
     return rows
 
 
@@ -123,9 +137,7 @@ def _collect_certificates(vault_name: str, uri: str, credential) -> list:
                 "Days Until Expiry": _days_until(cp.expires_on),
             })
     except Exception as exc:
-        log.warning(
-            "Skipping certificates for vault %s (no data-plane access?): %s", vault_name, exc
-        )
+        _log_skip("certificates", vault_name, exc)
     return rows
 
 
