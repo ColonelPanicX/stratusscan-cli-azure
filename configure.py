@@ -37,6 +37,9 @@ log = utils.get_logger()
 # ---------------------------------------------------------------------------
 
 def select_environment() -> str:
+    if utils.is_auto_run():
+        return utils.detect_environment()
+
     print("\n" + "=" * 64)
     print("  AZURE ENVIRONMENT SELECTION")
     print("=" * 64)
@@ -70,15 +73,33 @@ def discover_subscriptions() -> list:
     print("\nDiscovering accessible subscriptions...", end=" ", flush=True)
     try:
         subs = utils.list_subscriptions()
-        print(f"found {len(subs)}.")
-        return subs
-    except Exception as exc:
-        print(f"FAILED.\nError: {exc}")
+    except utils.AzureAccessError as exc:
+        label = "AzureUSGovernment" if exc.environment == "government" else "AzurePublicCloud"
+        print("FAILED.")
+        print(f"  {exc}")
+        print(f"  Environment in use: {label}. If that is the wrong cloud, re-run and choose the other;")
+        print("  otherwise check your sign-in (`az login`).")
         log.error("Subscription discovery failed: %s", exc)
-        return []
+        sys.exit(1)
+    print(f"found {len(subs)}.")
+    return subs
+
+
+def _auto_run_subscriptions(subs: list) -> list:
+    requested = utils.get_auto_subscriptions()
+    if not requested:
+        return subs
+    discovered = {sub["id"]: sub for sub in subs}
+    return [
+        discovered.get(sub_id, {"id": sub_id, "name": sub_id, "state": "Unknown", "tenant_id": ""})
+        for sub_id in requested
+    ]
 
 
 def select_subscriptions(subs: list) -> list:
+    if utils.is_auto_run():
+        return _auto_run_subscriptions(subs)
+
     if not subs:
         print("No accessible subscriptions found. Check your Azure credentials.")
         return []
@@ -110,7 +131,7 @@ def select_subscriptions(subs: list) -> list:
                 if 0 <= idx < len(subs):
                     return [subs[idx]]
                 print(f"  Invalid number. Enter 1–{len(subs)}.")
-            except (ValueError, KeyboardInterrupt):
+            except (ValueError, KeyboardInterrupt, EOFError):
                 print()
                 return []
 
@@ -118,7 +139,11 @@ def select_subscriptions(subs: list) -> list:
         return subs
 
     if choice == 3:
-        sub_id = input("  Enter subscription ID: ").strip()
+        try:
+            sub_id = input("  Enter subscription ID: ").strip()
+        except (KeyboardInterrupt, EOFError):
+            print()
+            return []
         if sub_id:
             return [{"id": sub_id, "name": sub_id, "state": "Unknown", "tenant_id": ""}]
         return []
@@ -168,6 +193,12 @@ def main() -> None:
     print("=" * 64)
     print("  This wizard configures your Azure environment and subscription.")
     print()
+
+    try:
+        utils.detect_environment()
+    except ValueError as exc:
+        print(f"ERROR: {exc}")
+        sys.exit(2)
 
     environment = select_environment()
     log.info("Environment selected: %s", environment)

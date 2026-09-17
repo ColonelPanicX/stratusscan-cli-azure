@@ -88,7 +88,10 @@ pyproject.toml
 
 Never instantiate `azure-mgmt-*` clients directly. Always use `utils.get_azure_client(service_name, subscription_id)`.
 
-For government cloud: set `AZURE_ENVIRONMENT=AzureUSGovernment` or `environment: government` in `config.json`.
+Cloud detection order: `AZURE_ENVIRONMENT` env var (unrecognized value → `ValueError`) → explicit `environment` in `config.json` (`government` / `public`; `auto` or unset falls through) → active Azure CLI cloud → `public`.
+`config.json` is untracked; `config-template.json` is the shipped shape.
+
+To force government cloud: set `AZURE_ENVIRONMENT=AzureUSGovernment` or `environment: government` in `config.json`.
 
 ---
 

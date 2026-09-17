@@ -103,9 +103,13 @@ The wizard:
 3. Prompts for subscription selection (single, all, or manual ID entry)
 4. Writes `config.json`
 
+`config.json` is local to your clone and untracked (it holds your subscription and
+tenant IDs). The repo ships `config-template.json` instead; with no `config.json`
+present the defaults apply and the cloud is auto-detected.
+
 ### Manual configuration
 
-Edit `config.json` directly:
+Copy `config-template.json` to `config.json` and edit it:
 
 ```json
 {
@@ -121,6 +125,11 @@ Edit `config.json` directly:
   "default_subscription_id": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 }
 ```
+
+`"environment"` accepts `"auto"` (default — detect from the active Azure CLI cloud),
+`"public"` or `"government"`. Detection order: `AZURE_ENVIRONMENT` env var →
+explicit `config.json` value → Azure CLI cloud → public. An unrecognized
+`AZURE_ENVIRONMENT` value is an error, not a silent fallback to public.
 
 For Azure US Government, set `"environment": "government"` or the environment variable:
 

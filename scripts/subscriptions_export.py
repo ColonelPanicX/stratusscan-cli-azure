@@ -24,7 +24,12 @@ def collect_subscriptions() -> list:
 
 
 def main() -> None:
-    subs = collect_subscriptions()
+    try:
+        subs = collect_subscriptions()
+    except utils.AzureAccessError as exc:
+        print(f"Subscription listing failed — {exc}")
+        print(exc.hint)
+        sys.exit(1)
     if not subs:
         log.warning("No subscriptions found or accessible")
         print("No subscriptions found.")

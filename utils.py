@@ -318,10 +318,12 @@ def save_multiple_dataframes_to_excel(sheets: Dict[str, Any], filename: str) -> 
 _config_lock = threading.Lock()
 _config_cache: Optional[Dict] = None
 
+_CONFIG_PATH = Path(__file__).parent / "config.json"
+
 _DEFAULT_CONFIG: Dict = {
     "subscriptions": [],
     "default_subscription_id": "",
-    "environment": "public",
+    "environment": "auto",
     "output_dir": "output",
     "log_retention_days": 14,
 }
@@ -333,10 +335,9 @@ def get_config() -> Dict:
     with _config_lock:
         if _config_cache is not None:
             return _config_cache
-        config_path = Path(__file__).parent / "config.json"
-        if config_path.exists():
+        if _CONFIG_PATH.exists():
             try:
-                with open(config_path, encoding="utf-8") as fh:
+                with open(_CONFIG_PATH, encoding="utf-8") as fh:
                     loaded = json.load(fh)
                 _config_cache = {**_DEFAULT_CONFIG, **loaded}
             except Exception as exc:
@@ -349,9 +350,8 @@ def get_config() -> Dict:
 
 def save_config(data: Dict) -> None:
     global _config_cache
-    config_path = Path(__file__).parent / "config.json"
     with _config_lock:
-        with open(config_path, "w", encoding="utf-8") as fh:
+        with open(_CONFIG_PATH, "w", encoding="utf-8") as fh:
             json.dump(data, fh, indent=2)
         _config_cache = data
 
@@ -388,33 +388,57 @@ def detect_azure_cloud() -> Optional[str]:
     return None
 
 
+_GOVERNMENT_NAMES = ("azureusgovernment", "government", "usgov")
+_PUBLIC_NAMES = ("azurepubliccloud", "public", "azurecloud")
+
+
+def _explicit_environment(value: Any) -> str:
+    """Return 'government' / 'public' when value names a cloud, else ''."""
+    if not isinstance(value, str):
+        return ""
+    name = value.strip().lower()
+    if name in _GOVERNMENT_NAMES:
+        return "government"
+    if name in _PUBLIC_NAMES:
+        return "public"
+    return ""
+
+
 def detect_environment() -> str:
     """
     Return 'government' if running in AzureUSGovernment, otherwise 'public'.
 
     Detection order:
     1. AZURE_ENVIRONMENT env var ('AzureUSGovernment' → 'government')
-    2. config.json 'environment' key (only if a config.json has been written)
+    2. config.json 'environment' key, when it names a cloud (not 'auto' / unset)
     3. Auto-detected active Azure CLI cloud (Cloud Shell / `az cloud set`)
     4. Default: 'public'
+
+    Raises:
+        ValueError: AZURE_ENVIRONMENT is set to a value that names no known cloud.
+            Guessing here would send a credential to the wrong cloud's endpoints.
     """
-    env_var = os.environ.get("AZURE_ENVIRONMENT", "").strip().lower()
-    if env_var in ("azureusgovernment", "government", "usgov"):
-        return "government"
-    if env_var in ("azurepubliccloud", "public", "azurecloud"):
-        return "public"
+    env_var = os.environ.get("AZURE_ENVIRONMENT", "").strip()
+    if env_var:
+        explicit = _explicit_environment(env_var)
+        if not explicit:
+            raise ValueError(
+                f"AZURE_ENVIRONMENT='{env_var}' is not a recognized Azure cloud. "
+                f"Accepted values (case-insensitive): {', '.join(_GOVERNMENT_NAMES + _PUBLIC_NAMES)}. "
+                f"Unset it to auto-detect."
+            )
+        return explicit
 
-    config_path = Path(__file__).parent / "config.json"
-    if config_path.exists():
-        cfg = get_config()
-        if cfg.get("environment", "public").lower() in ("government", "azureusgovernment"):
-            return "government"
-        return "public"
+    configured = get_config().get("environment")
+    explicit = _explicit_environment(configured)
+    if explicit:
+        return explicit
+    if isinstance(configured, str) and configured.strip().lower() not in ("", "auto"):
+        get_logger().warning(
+            "config.json environment '%s' is not a recognized cloud — auto-detecting.", configured
+        )
 
-    detected = detect_azure_cloud()
-    if detected:
-        return detected
-    return "public"
+    return detect_azure_cloud() or "public"
 
 
 def is_service_available_in_environment(service: str, environment: str) -> bool:
@@ -439,22 +463,6 @@ _credential_lock = threading.Lock()
 _credential_cache: Optional[Any] = None
 
 
-class _GovernmentCredential:
-    """Rewrite public ARM token scopes to the Azure Government ARM scope."""
-
-    def __init__(self, credential: Any) -> None:
-        self._credential = credential
-
-    def get_token(self, *scopes: str, **kwargs: Any) -> Any:
-        gov_scopes = tuple(
-            f"{_GOV_BASE_URL}/.default"
-            if scope in ("https://management.azure.com/.default", "https://management.azure.com")
-            else scope
-            for scope in scopes
-        )
-        return self._credential.get_token(*gov_scopes, **kwargs)
-
-
 def _get_credential():
     """Return a cached DefaultAzureCredential, configured for the active environment."""
     global _credential_cache
@@ -468,8 +476,8 @@ def _get_credential():
 
         environment = detect_environment()
         if environment == "government":
-            _credential_cache = _GovernmentCredential(
-                DefaultAzureCredential(authority=AzureAuthorityHosts.AZURE_GOVERNMENT)
+            _credential_cache = DefaultAzureCredential(
+                authority=AzureAuthorityHosts.AZURE_GOVERNMENT
             )
         else:
             _credential_cache = DefaultAzureCredential()
@@ -532,8 +540,11 @@ _CLIENT_MAP: Dict[str, tuple] = {
     "applicationinsights": ("azure.mgmt.applicationinsights", "ApplicationInsightsManagementClient", True),
 }
 
-# Government cloud base URL override
+# The Azure Government token audience is not the endpoint host: azure-mgmt-core
+# get_arm_endpoints(AZURE_US_GOVERNMENT) and the Azure CLI (activeDirectoryResourceId)
+# both pair this endpoint with the management.core audience.
 _GOV_BASE_URL = "https://management.usgovcloudapi.net"
+_GOV_ARM_SCOPE = "https://management.core.usgovcloudapi.net/.default"
 
 # Azure Government can lag public cloud SDK defaults. Keep overrides targeted
 # to services that have been observed failing against the default api-version.
@@ -589,7 +600,7 @@ def get_azure_client(service_name: str, subscription_id: Optional[str] = None) -
     kwargs: Dict[str, Any] = {}
     if environment == "government":
         kwargs["base_url"] = _GOV_BASE_URL
-        kwargs["credential_scopes"] = [f"{_GOV_BASE_URL}/.default"]
+        kwargs["credential_scopes"] = [_GOV_ARM_SCOPE]
         if key in _GOV_API_VERSIONS:
             kwargs["api_version"] = _GOV_API_VERSIONS[key]
 
@@ -602,14 +613,48 @@ def get_azure_client(service_name: str, subscription_id: Optional[str] = None) -
 # Subscription helpers
 # ---------------------------------------------------------------------------
 
+class AzureAccessError(Exception):
+    """
+    Azure could not be reached or refused the credential; the SDK error is __cause__.
+
+    Lets the console scripts tell "access failed" apart from "zero subscriptions"
+    without importing azure-core themselves.
+    """
+
+    def __init__(self, cause: BaseException, environment: str) -> None:
+        lines = str(cause).splitlines()
+        summary = next((line.strip() for line in lines if line.strip()), "")
+        # DefaultAzureCredential's first line is generic; the chain stops at the
+        # credential that hard-failed, so the last attempt names the real cause.
+        attempts = [line.strip() for line in lines if line.startswith("\t")]
+        if attempts:
+            summary = f"{summary} Last attempted: {attempts[-1]}"
+        super().__init__(f"{type(cause).__name__}: {summary}")
+        self.environment = environment
+
+    @property
+    def hint(self) -> str:
+        label = "AzureUSGovernment" if self.environment == "government" else "AzurePublicCloud"
+        return (
+            f"Active cloud detected as {label}. If that is wrong, set AZURE_ENVIRONMENT "
+            f"or run configure.py; otherwise check your sign-in (`az login`)."
+        )
+
+
 def list_subscriptions() -> List[Dict[str, str]]:
     """
     Return all subscriptions accessible to the current credential.
 
     Returns:
         List of dicts with keys: id, name, state, tenant_id
+
+    Raises:
+        AzureAccessError: authentication, authorization or transport failure. An
+            empty list therefore always means the credential really sees nothing.
     """
     client = get_azure_client("subscription")
+    from azure.core.exceptions import AzureError
+
     subs = []
     try:
         for sub in client.subscriptions.list():
@@ -619,8 +664,10 @@ def list_subscriptions() -> List[Dict[str, str]]:
                 "state": str(sub.state) if sub.state else "",
                 "tenant_id": sub.tenant_id or "",
             })
-    except Exception as exc:
-        get_logger().error("Failed to list subscriptions: %s", exc)
+    except AzureError as exc:
+        # INFO keeps the full SDK message in the log file only; the caller prints the summary.
+        get_logger().info("Failed to list subscriptions: %s", exc)
+        raise AzureAccessError(exc, detect_environment()) from exc
     return subs
 
 
@@ -700,7 +747,7 @@ def prompt_menu(
     while True:
         try:
             choice = input("Enter your choice: ").strip().lower()
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, EOFError):
             print()
             return "exit" if allow_exit else "back"
         if choice in valid:

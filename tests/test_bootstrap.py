@@ -106,26 +106,8 @@ def test_government_clients_use_government_arm_scope(monkeypatch):
     assert captured["credential"] == "credential"
     assert captured["kwargs"]["base_url"] == "https://management.usgovcloudapi.net"
     assert captured["kwargs"]["credential_scopes"] == [
-        "https://management.usgovcloudapi.net/.default"
+        "https://management.core.usgovcloudapi.net/.default"
     ]
-
-
-def test_government_credential_rewrites_public_arm_scope():
-    captured = {}
-
-    class Credential:
-        def get_token(self, *scopes, **kwargs):
-            captured["scopes"] = scopes
-            captured["kwargs"] = kwargs
-            return "token"
-
-    credential = utils._GovernmentCredential(Credential())
-
-    token = credential.get_token("https://management.azure.com/.default", tenant_id="tenant")
-
-    assert token == "token"
-    assert captured["scopes"] == ("https://management.usgovcloudapi.net/.default",)
-    assert captured["kwargs"] == {"tenant_id": "tenant"}
 
 
 def test_government_storage_client_uses_supported_api_version(monkeypatch):
@@ -172,7 +154,9 @@ def test_configure_applies_selected_environment_before_subscription_discovery(mo
         lambda: observed.setdefault("env", configure.os.environ.get("AZURE_ENVIRONMENT")) or [],
     )
     monkeypatch.setattr(configure, "select_subscriptions", lambda subs: [])
-    monkeypatch.delenv("AZURE_ENVIRONMENT", raising=False)
+    # configure.main() writes AZURE_ENVIRONMENT; setenv first so teardown restores it
+    monkeypatch.setenv("AZURE_ENVIRONMENT", "")
+    monkeypatch.delenv("AZURE_ENVIRONMENT")
 
     configure.main()
 

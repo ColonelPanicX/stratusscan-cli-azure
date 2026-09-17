@@ -159,9 +159,13 @@ def _autodiscover_subscriptions() -> list:
     print("\nNo configuration found — auto-detecting environment and discovering subscriptions...")
     try:
         discovered = utils.list_subscriptions()
-    except Exception as exc:
-        print(f"  Subscription discovery failed: {exc}")
-        return []
+    except utils.AzureAccessError as exc:
+        print(f"  Subscription discovery failed — {exc}")
+        print(f"  {exc.hint}")
+        sys.exit(1)
+    except ImportError as exc:
+        print(f"  Subscription discovery failed — {exc}")
+        sys.exit(1)
     pairs = [
         (s["id"], s.get("name", s["id"]))
         for s in discovered
@@ -415,7 +419,18 @@ def menu_main(subs: list) -> None:
 # Entry point
 # ---------------------------------------------------------------------------
 
+def _environment_label_or_exit() -> str:
+    try:
+        environment = utils.detect_environment()
+    except ValueError as exc:
+        print(f"ERROR: {exc}")
+        sys.exit(2)
+    return "AzureUSGovernment" if environment == "government" else "AzurePublicCloud"
+
+
 def main() -> None:
+    env_label = _environment_label_or_exit()
+
     if utils.is_auto_run():
         auto_subs = utils.get_auto_subscriptions()
         if auto_subs:
@@ -437,7 +452,8 @@ def main() -> None:
     subs = _active_subscriptions() or _autodiscover_subscriptions()
     if not subs:
         print("\nNo accessible subscriptions found.")
-        print("  Check your Azure sign-in (e.g. `az login`), then try again.")
+        print(f"  Sign-in worked, but no enabled subscription is visible in {env_label}.")
+        print("  Check the account and tenant (`az account list`), or set AZURE_ENVIRONMENT if the cloud is wrong.")
         sys.exit(1)
     menu_main(subs)
 
