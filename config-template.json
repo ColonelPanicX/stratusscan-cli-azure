@@ -1,5 +1,5 @@
 {
-  "environment": "public",
+  "environment": "auto",
   "subscriptions": [],
   "default_subscription_id": "",
   "output_dir": "output",

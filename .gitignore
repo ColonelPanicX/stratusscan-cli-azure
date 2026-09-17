@@ -29,6 +29,9 @@ logs/
 # AzureScan runtime output — never commit exports
 output/
 
+# Local runtime config — holds subscription and tenant IDs (template: config-template.json)
+config.json
+
 # Python (common even in mixed repos)
 __pycache__/
 *.py[cod]

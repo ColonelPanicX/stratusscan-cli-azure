@@ -1,7 +1,10 @@
 """Smoke tests for utils.py — pure helpers and registry integrity, no live Azure."""
 
 import enum
+import json
 import re
+import shutil
+from pathlib import Path
 
 import pytest
 
@@ -79,8 +82,9 @@ def test_extract_resource_group_handles_casing_and_missing():
     assert utils.extract_resource_group(None) == ""
 
 
-def test_detect_environment_defaults_to_public(monkeypatch):
+def test_detect_environment_defaults_to_public(monkeypatch, tmp_path):
     monkeypatch.delenv("AZURE_ENVIRONMENT", raising=False)
+    monkeypatch.setenv("AZURE_CONFIG_DIR", str(tmp_path))
     monkeypatch.setattr(utils, "get_config", lambda: {})
     assert utils.detect_environment() == "public"
 
@@ -111,12 +115,204 @@ def test_detect_azure_cloud_returns_none_when_absent(monkeypatch, tmp_path):
     assert utils.detect_azure_cloud() is None
 
 
-def test_detect_environment_autodetects_when_unconfigured(monkeypatch, tmp_path):
-    monkeypatch.delenv("AZURE_ENVIRONMENT", raising=False)
-    # no config.json on disk → falls through to az auto-detect
-    monkeypatch.setattr(utils.Path, "exists", lambda self: False)
-    monkeypatch.setattr(utils, "detect_azure_cloud", lambda: "government")
+@pytest.fixture
+def isolated_config(monkeypatch, tmp_path):
+    """Real config.json and az CLI config files under tmp_path; nothing read from the repo or $HOME."""
+    config_path = tmp_path / "config.json"
+    az_dir = tmp_path / "azure"
+    az_dir.mkdir()
+    monkeypatch.setattr(utils, "_CONFIG_PATH", config_path)
+    monkeypatch.setattr(utils, "_config_cache", None)
+    monkeypatch.setenv("AZURE_CONFIG_DIR", str(az_dir))
+    # setenv first so teardown restores the variable even if the code under test writes it
+    monkeypatch.setenv("AZURE_ENVIRONMENT", "")
+    monkeypatch.delenv("AZURE_ENVIRONMENT")
+
+    def write(config=None, az_cloud=None):
+        if config is not None:
+            config_path.write_text(json.dumps(config), encoding="utf-8")
+        if az_cloud is not None:
+            (az_dir / "config").write_text(f"[cloud]\nname = {az_cloud}\n", encoding="utf-8")
+        monkeypatch.setattr(utils, "_config_cache", None)
+
+    write.config_path = config_path
+    return write
+
+
+_TEMPLATE = Path(utils.__file__).parent / "config-template.json"
+
+
+def test_shipped_template_is_auto_and_carries_no_subscriptions():
+    template = json.loads(_TEMPLATE.read_text(encoding="utf-8"))
+    assert template["environment"] == "auto"
+    assert template["subscriptions"] == []
+    assert template["default_subscription_id"] == ""
+    assert set(template) == set(utils._DEFAULT_CONFIG)
+
+
+@pytest.mark.parametrize(
+    "az_cloud, expected",
+    [("AzureUSGovernment", "government"), ("AzureCloud", "public"), (None, "public")],
+)
+def test_shipped_template_config_reaches_autodetect(isolated_config, az_cloud, expected):
+    shutil.copy(_TEMPLATE, isolated_config.config_path)
+    isolated_config(az_cloud=az_cloud)
+    assert utils.detect_environment() == expected
+
+
+def test_absent_config_json_reaches_autodetect(isolated_config):
+    isolated_config(az_cloud="AzureUSGovernment")
+    assert not isolated_config.config_path.exists()
     assert utils.detect_environment() == "government"
+
+
+@pytest.mark.parametrize("value", [None, "", "  ", "auto", "AUTO", 7, ["government"], "not-a-cloud"])
+def test_non_explicit_config_environment_falls_through_to_autodetect(isolated_config, value):
+    isolated_config(config={"environment": value}, az_cloud="AzureUSGovernment")
+    assert utils.detect_environment() == "government"
+
+
+def test_config_without_environment_key_falls_through_to_autodetect(isolated_config):
+    isolated_config(config={"subscriptions": []}, az_cloud="AzureUSGovernment")
+    assert utils.detect_environment() == "government"
+
+
+def test_corrupt_config_json_falls_through_to_autodetect(isolated_config):
+    isolated_config.config_path.write_text("{not json", encoding="utf-8")
+    isolated_config(az_cloud="AzureUSGovernment")
+    assert utils.detect_environment() == "government"
+
+
+@pytest.mark.parametrize(
+    "configured, az_cloud, expected",
+    [
+        ("public", "AzureUSGovernment", "public"),
+        ("AzurePublicCloud", "AzureUSGovernment", "public"),
+        ("government", "AzureCloud", "government"),
+        ("AzureUSGovernment", "AzureCloud", "government"),
+    ],
+)
+def test_explicit_config_environment_wins_over_autodetect(isolated_config, configured, az_cloud, expected):
+    isolated_config(config={"environment": configured}, az_cloud=az_cloud)
+    assert utils.detect_environment() == expected
+
+
+def test_environment_variable_wins_over_config_and_autodetect(isolated_config, monkeypatch):
+    isolated_config(config={"environment": "public"}, az_cloud="AzureCloud")
+    monkeypatch.setenv("AZURE_ENVIRONMENT", "AzureUSGovernment")
+    assert utils.detect_environment() == "government"
+
+    isolated_config(config={"environment": "government"}, az_cloud="AzureUSGovernment")
+    monkeypatch.setenv("AZURE_ENVIRONMENT", "public")
+    assert utils.detect_environment() == "public"
+
+
+@pytest.mark.parametrize("value", ["AzureChinaCloud", "gov", "auto", "AzureUSGovernmentCloud"])
+def test_unrecognized_environment_variable_fails_closed(isolated_config, monkeypatch, value):
+    isolated_config(config={"environment": "government"}, az_cloud="AzureUSGovernment")
+    monkeypatch.setenv("AZURE_ENVIRONMENT", value)
+    with pytest.raises(ValueError) as excinfo:
+        utils.detect_environment()
+    assert value in str(excinfo.value)
+    assert "azureusgovernment" in str(excinfo.value)
+    assert "azurepubliccloud" in str(excinfo.value)
+
+
+def test_blank_environment_variable_is_treated_as_unset(isolated_config, monkeypatch):
+    isolated_config(az_cloud="AzureUSGovernment")
+    monkeypatch.setenv("AZURE_ENVIRONMENT", "   ")
+    assert utils.detect_environment() == "government"
+
+
+def test_save_config_creates_config_json_when_absent(isolated_config):
+    assert not isolated_config.config_path.exists()
+    utils.save_config({**utils._DEFAULT_CONFIG, "environment": "government"})
+    assert json.loads(isolated_config.config_path.read_text(encoding="utf-8"))["environment"] == "government"
+    assert utils.detect_environment() == "government"
+
+
+def test_get_config_defaults_to_auto_when_config_json_absent(isolated_config):
+    isolated_config()
+    assert utils.get_config()["environment"] == "auto"
+
+
+_CHAINED_AUTH_MESSAGE = (
+    "DefaultAzureCredential failed to retrieve a token from the included credentials.\n"
+    "Attempted credentials:\n"
+    "\tEnvironmentCredential: EnvironmentCredential authentication unavailable.\n"
+    "\tManagedIdentityCredential: (AudienceNotSupported) Audience https://management.azure.com "
+    "is not a supported MSI token audience.\n"
+    "To mitigate this issue, please refer to the troubleshooting guidelines."
+)
+
+
+def _subscription_client_raising(error):
+    class _Subscriptions:
+        def list(self):
+            raise error
+            yield  # pragma: no cover — makes this a lazy pager like the SDK's ItemPaged
+
+    class _Client:
+        subscriptions = _Subscriptions()
+
+    return _Client()
+
+
+def test_list_subscriptions_raises_on_auth_failure_instead_of_returning_empty(monkeypatch):
+    exceptions = pytest.importorskip("azure.core.exceptions")
+    error = exceptions.ClientAuthenticationError(message=_CHAINED_AUTH_MESSAGE)
+    monkeypatch.setattr(utils, "get_azure_client", lambda service: _subscription_client_raising(error))
+    monkeypatch.setattr(utils, "detect_environment", lambda: "public")
+
+    with pytest.raises(utils.AzureAccessError) as excinfo:
+        utils.list_subscriptions()
+
+    assert excinfo.value.__cause__ is error
+    assert excinfo.value.environment == "public"
+    assert "ClientAuthenticationError" in str(excinfo.value)
+    assert "AudienceNotSupported" in str(excinfo.value)
+    assert "\n" not in str(excinfo.value)
+    assert "AzurePublicCloud" in excinfo.value.hint
+    assert "AZURE_ENVIRONMENT" in excinfo.value.hint
+
+
+@pytest.mark.parametrize("error_name", ["HttpResponseError", "ServiceRequestError"])
+def test_list_subscriptions_raises_on_http_and_transport_failure(monkeypatch, error_name):
+    exceptions = pytest.importorskip("azure.core.exceptions")
+    error = getattr(exceptions, error_name)(message="AuthorizationFailed: no access")
+    monkeypatch.setattr(utils, "get_azure_client", lambda service: _subscription_client_raising(error))
+    monkeypatch.setattr(utils, "detect_environment", lambda: "government")
+
+    with pytest.raises(utils.AzureAccessError) as excinfo:
+        utils.list_subscriptions()
+
+    assert excinfo.value.__cause__ is error
+    assert "AzureUSGovernment" in excinfo.value.hint
+
+
+def test_list_subscriptions_returns_empty_list_only_when_azure_returns_none(monkeypatch):
+    pytest.importorskip("azure.core.exceptions")
+
+    class _Subscriptions:
+        def list(self):
+            return iter(())
+
+    class _Client:
+        subscriptions = _Subscriptions()
+
+    monkeypatch.setattr(utils, "get_azure_client", lambda service: _Client())
+    assert utils.list_subscriptions() == []
+
+
+def test_prompt_menu_treats_eof_as_exit(monkeypatch, capsys):
+    monkeypatch.delenv("STRATUSSCAN_AUTO_RUN", raising=False)
+
+    def closed_stdin(prompt=""):
+        raise EOFError
+
+    monkeypatch.setattr("builtins.input", closed_stdin)
+    assert utils.prompt_menu("T", ["a"], allow_back=False, allow_exit=True) == "exit"
+    assert utils.prompt_menu("T", ["a"], allow_back=True, allow_exit=False) == "back"
 
 
 def test_is_service_available_in_environment_contract():

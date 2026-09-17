@@ -46,6 +46,44 @@ def test_client_map_module_maps_to_an_installed_distribution(service):
     assert version("-".join(module_path.split(".")[:3]))
 
 
+@pytest.mark.parametrize("service", sorted(utils._CLIENT_MAP))
+def test_government_client_honors_the_scope_and_endpoint_it_is_given(service, monkeypatch):
+    """No credential wrapper rewrites scopes any more — every client must take them from kwargs."""
+    module_path, _, needs_sub = utils._CLIENT_MAP[service]
+    pytest.importorskip(module_path)
+    monkeypatch.setattr(utils, "_get_credential", lambda: _OfflineCredential())
+    monkeypatch.setattr(utils, "detect_environment", lambda: "government")
+
+    client = utils.get_azure_client(service, _SUBSCRIPTION_ID if needs_sub else None)
+
+    assert client._config.credential_scopes == ["https://management.core.usgovcloudapi.net/.default"]
+    # newer generated clients keep the host on _config and template the pipeline URL as "{endpoint}"
+    base_url = getattr(client._config, "base_url", None) or client._client._base_url
+    assert base_url.rstrip("/") == "https://management.usgovcloudapi.net"
+
+
+def test_government_scope_matches_the_sdk_cloud_definition():
+    core = pytest.importorskip("azure.core")
+    tools = pytest.importorskip("azure.mgmt.core.tools")
+    if not hasattr(tools, "get_arm_endpoints"):
+        pytest.skip("azure-mgmt-core predates get_arm_endpoints")
+    endpoints = tools.get_arm_endpoints(core.AzureClouds.AZURE_US_GOVERNMENT)
+    assert endpoints["credential_scopes"] == [utils._GOV_ARM_SCOPE]
+    assert endpoints["resource_manager"].rstrip("/") == utils._GOV_BASE_URL
+
+
+def test_government_credential_is_a_plain_default_credential(monkeypatch):
+    identity = pytest.importorskip("azure.identity")
+    monkeypatch.setattr(utils, "_credential_cache", None)
+    monkeypatch.setattr(utils, "detect_environment", lambda: "government")
+
+    credential = utils._get_credential()
+
+    assert isinstance(credential, identity.DefaultAzureCredential)
+    assert callable(getattr(credential, "get_token_info", None))
+    assert callable(getattr(credential, "close", None))
+
+
 @pytest.mark.parametrize(
     "service, operation_group, method",
     [
