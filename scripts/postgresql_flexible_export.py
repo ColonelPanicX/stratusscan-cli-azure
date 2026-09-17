@@ -62,11 +62,11 @@ def main(subscription_id: str, subscription_name: str) -> None:
             "Admin Login": srv.administrator_login or "",
             "Storage GB": getattr(storage, "storage_size_gb", "") if storage else "",
             "Backup Retention Days": getattr(backup, "backup_retention_days", "") if backup else "",
-            "Geo-Redundant Backup": str(getattr(backup, "geo_redundant_backup", "")) if backup else "",
-            "HA Mode": str(getattr(ha, "mode", "")) if ha else "",
+            "Geo-Redundant Backup": utils.s(getattr(backup, "geo_redundant_backup", None)) if backup else "",
+            "HA Mode": utils.s(getattr(ha, "mode", None)) if ha else "",
             "State": srv.state or "",
             "FQDN": srv.fully_qualified_domain_name or "",
-            "Public Network Access": str(getattr(network, "public_network_access", "")) if network else "",
+            "Public Network Access": utils.s(getattr(network, "public_network_access", None)) if network else "",
             "Tags": "; ".join(f"{k}={v}" for k, v in tags.items()),
         })
 

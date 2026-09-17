@@ -41,12 +41,12 @@ def main(subscription_id: str, subscription_name: str) -> None:
                     "Storage Account": account,
                     "Container Name": c.name,
                     "Resource Group": rg,
-                    "Public Access Level": str(getattr(c, "public_access", "")) if getattr(c, "public_access", None) else "None",
-                    "Lease State": str(getattr(c, "lease_state", "")) if getattr(c, "lease_state", None) else "",
+                    "Public Access Level": utils.s(getattr(c, "public_access", None)) if getattr(c, "public_access", None) else "None",
+                    "Lease State": utils.s(getattr(c, "lease_state", None)) if getattr(c, "lease_state", None) else "",
                     "Has Immutability Policy": "Yes" if getattr(c, "has_immutability_policy", False) else "No",
                     "Has Legal Hold": "Yes" if getattr(c, "has_legal_hold", False) else "No",
                     "Default Encryption Scope": getattr(c, "default_encryption_scope", "") or "",
-                    "Last Modified": str(getattr(c, "last_modified_time", "")) if getattr(c, "last_modified_time", None) else "",
+                    "Last Modified": utils.s(getattr(c, "last_modified_time", None)) if getattr(c, "last_modified_time", None) else "",
                     "Metadata": "; ".join(f"{k}={v}" for k, v in metadata.items()),
                 })
         except Exception as e:

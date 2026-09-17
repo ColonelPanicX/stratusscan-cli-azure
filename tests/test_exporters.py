@@ -1,5 +1,6 @@
 """Exporter unit tests — mocked Azure SDK models, no live Azure."""
 
+import enum
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -7,6 +8,7 @@ from types import SimpleNamespace
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
 import advisor_export  # noqa: E402
+import network_security_groups_export as nsg_export  # noqa: E402
 import virtual_machines_export as vm_export  # noqa: E402
 
 
@@ -174,3 +176,58 @@ def test_extract_savings_ignores_non_numeric_amounts():
     result = advisor_export._extract_savings({"savingsAmount": "N/A", "savingsCurrency": "USD"})
     assert result["Potential Savings (Monthly)"] == ""
     assert result["Savings Currency"] == ""
+
+
+# --- SSAZR-112: NSG rule counting must survive Enum-typed direction -------------
+
+
+class _Direction(str, enum.Enum):
+    INBOUND = "Inbound"
+    OUTBOUND = "Outbound"
+
+
+def _nsg_rule(name, direction):
+    return SimpleNamespace(
+        name=name, priority=100, direction=direction, access="Allow", protocol="Tcp",
+        source_port_range="*", source_port_ranges=None,
+        destination_port_range="443", destination_port_ranges=None,
+        source_address_prefix="*", source_address_prefixes=None,
+        destination_address_prefix="*", destination_address_prefixes=None,
+        description=None,
+    )
+
+
+def _run_nsg_export(monkeypatch, directions):
+    nsg = SimpleNamespace(
+        id="/subscriptions/s/resourceGroups/rg1/providers/Microsoft.Network/networkSecurityGroups/nsg1",
+        name="nsg1", location="eastus", tags=None, provisioning_state="Succeeded",
+        subnets=None, network_interfaces=None, default_security_rules=None,
+        security_rules=[_nsg_rule(f"r{i}", d) for i, d in enumerate(directions)],
+    )
+    captured = {}
+    monkeypatch.setattr(nsg_export, "collect_nsgs", lambda subscription_id: [nsg])
+    monkeypatch.setattr(
+        nsg_export.utils, "save_multiple_dataframes_to_excel",
+        lambda sheets, filename: captured.update(sheets),
+    )
+    nsg_export.main("sub-id", "sub-name")
+    return captured["NSGs"].iloc[0], captured["Rules"]
+
+
+def test_nsg_rule_counts_with_enum_member_direction(monkeypatch):
+    summary, rules = _run_nsg_export(
+        monkeypatch, [_Direction.INBOUND, _Direction.INBOUND, _Direction.OUTBOUND]
+    )
+    assert (summary["Custom Inbound Rules"], summary["Custom Outbound Rules"]) == (2, 1)
+    assert list(rules["Direction"]) == ["Inbound", "Inbound", "Outbound"]
+
+
+def test_nsg_rule_counts_with_plain_string_direction(monkeypatch):
+    summary, rules = _run_nsg_export(monkeypatch, ["Inbound", "outbound", "OUTBOUND"])
+    assert (summary["Custom Inbound Rules"], summary["Custom Outbound Rules"]) == (1, 2)
+    assert list(rules["Direction"]) == ["Inbound", "outbound", "OUTBOUND"]
+
+
+def test_nsg_rule_with_no_direction_is_counted_in_neither_bucket(monkeypatch):
+    summary, _ = _run_nsg_export(monkeypatch, [None])
+    assert (summary["Custom Inbound Rules"], summary["Custom Outbound Rules"]) == (0, 0)

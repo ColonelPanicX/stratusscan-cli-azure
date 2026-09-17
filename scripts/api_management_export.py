@@ -52,13 +52,13 @@ def main(subscription_id: str, subscription_name: str) -> None:
             "Name": svc.name,
             "Resource Group": utils.extract_resource_group(svc.id),
             "Location": svc.location,
-            "SKU": str(sku.name) if sku else "",
+            "SKU": utils.s(sku.name) if sku else "",
             "Capacity": getattr(sku, "capacity", "") if sku else "",
             "Publisher Name": svc.publisher_name or "",
             "Publisher Email": svc.publisher_email or "",
             "Gateway URL": svc.gateway_url or "",
             "Provisioning State": svc.provisioning_state or "",
-            "VNet Type": str(svc.virtual_network_type) if svc.virtual_network_type else "",
+            "VNet Type": utils.s(svc.virtual_network_type),
             "Tags": "; ".join(f"{k}={v}" for k, v in tags.items()),
         })
 

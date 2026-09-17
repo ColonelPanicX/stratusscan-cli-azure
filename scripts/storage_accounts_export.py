@@ -43,18 +43,18 @@ def main(subscription_id: str, subscription_name: str) -> None:
             "Resource Group": rg,
             "Location": acct.location,
             "SKU": acct.sku.name if acct.sku else "",
-            "Kind": str(acct.kind) if acct.kind else "",
-            "Access Tier": str(acct.access_tier) if acct.access_tier else "",
+            "Kind": utils.s(acct.kind),
+            "Access Tier": utils.s(acct.access_tier),
             "HTTPS Only": acct.enable_https_traffic_only,
             "Replication": acct.sku.tier if acct.sku else "",
-            "Public Network Access": str(acct.public_network_access) if acct.public_network_access else "Enabled",
-            "Minimum TLS Version": str(acct.minimum_tls_version) if acct.minimum_tls_version else "",
+            "Public Network Access": utils.s(acct.public_network_access) if acct.public_network_access else "Enabled",
+            "Minimum TLS Version": utils.s(acct.minimum_tls_version),
             "Blob Soft Delete": (
                 acct.blob_restore_status is not None
                 if hasattr(acct, "blob_restore_status") else ""
             ),
             "Allow Blob Public Access": getattr(acct, "allow_blob_public_access", ""),
-            "Provisioning State": str(acct.provisioning_state) if acct.provisioning_state else "",
+            "Provisioning State": utils.s(acct.provisioning_state),
             "Tags": "; ".join(f"{k}={v}" for k, v in tags.items()),
         })
 

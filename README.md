@@ -2,7 +2,7 @@
 
 [![Version: 0.1.0](https://img.shields.io/badge/version-0.1.0--alpha-red.svg)](#project-status)
 [![Status: Pre-Alpha](https://img.shields.io/badge/status-pre--alpha-red.svg)](#project-status)
-[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: GPL-3.0](https://img.shields.io/badge/License-GPL%203.0-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Azure Public](https://img.shields.io/badge/Azure-Public%20Cloud-0078D4.svg)](https://portal.azure.com)
 [![Azure Government](https://img.shields.io/badge/Azure-US%20Government-blue.svg)](https://portal.azure.us)

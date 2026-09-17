@@ -11,6 +11,7 @@ except ImportError:
     import utils
 
 import pandas as pd
+from azure.core.exceptions import HttpResponseError
 
 utils.setup_logging("diagnostic-settings-export")
 utils.log_script_start("diagnostic_settings_export.py", "Diagnostic Settings Cross-Resource Audit Export")
@@ -78,11 +79,13 @@ def main(subscription_id: str, subscription_name: str) -> None:
     for r in resources:
         rg = r.id.split("/resourceGroups/")[1].split("/")[0] if r.id and "/resourceGroups/" in r.id else ""
         try:
-            settings = list(monitor.diagnostic_settings.list(r.id).value or [])
+            settings = list(monitor.diagnostic_settings.list(r.id))
             status = "Yes" if settings else "No"
-        except Exception:
+        except HttpResponseError as exc:
             settings = []
-            status = "Unsupported/Error"
+            code = getattr(getattr(exc, "error", None), "code", None) or exc.status_code
+            status = "Unsupported" if code == "ResourceTypeNotSupported" else f"Error ({code})"
+            log.warning("Diagnostic settings unavailable for %s: %s", r.id, code)
 
         summary_rows.append({
             "Resource Name": r.name,

@@ -47,7 +47,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
             "Location": fw.location,
             "SKU Name": fw.sku.name if fw.sku else "",
             "SKU Tier": fw.sku.tier if fw.sku else "",
-            "Threat Intel Mode": str(fw.threat_intel_mode) if fw.threat_intel_mode else "",
+            "Threat Intel Mode": utils.s(fw.threat_intel_mode),
             "Firewall Policy": policy_id,
             "Network Rule Collections": len(fw.network_rule_collections or []),
             "Application Rule Collections": len(fw.application_rule_collections or []),

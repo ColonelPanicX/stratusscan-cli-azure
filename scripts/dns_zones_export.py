@@ -37,7 +37,7 @@ def _public_rows(zones: list) -> list:
         rows.append({
             "Name": zone.name,
             "Resource Group": utils.extract_resource_group(zone.id),
-            "Type": str(zone.zone_type) if getattr(zone, "zone_type", None) else "Public",
+            "Type": utils.s(zone.zone_type) if getattr(zone, "zone_type", None) else "Public",
             "Record Sets": zone.number_of_record_sets if zone.number_of_record_sets is not None else "",
             "Max Record Sets": zone.max_number_of_record_sets if zone.max_number_of_record_sets is not None else "",
             "Name Servers": ", ".join(zone.name_servers) if zone.name_servers else "",

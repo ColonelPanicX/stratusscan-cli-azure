@@ -29,7 +29,7 @@ def _os_type(vmss) -> str:
         profile = vmss.virtual_machine_profile
         os_disk = profile.storage_profile.os_disk
         if os_disk and os_disk.os_type:
-            return str(os_disk.os_type)
+            return utils.s(os_disk.os_type)
     except Exception:
         pass
     return ""
@@ -45,7 +45,7 @@ def _admin_username(vmss) -> str:
 def _upgrade_policy(vmss) -> str:
     try:
         if vmss.upgrade_policy and vmss.upgrade_policy.mode:
-            return str(vmss.upgrade_policy.mode)
+            return utils.s(vmss.upgrade_policy.mode)
     except Exception:
         pass
     return ""
@@ -72,7 +72,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
             "SKU Name": vmss.sku.name if vmss.sku else "",
             "SKU Capacity": vmss.sku.capacity if vmss.sku else "",
             "Upgrade Policy": _upgrade_policy(vmss),
-            "Orchestration Mode": str(vmss.orchestration_mode) if vmss.orchestration_mode else "",
+            "Orchestration Mode": utils.s(vmss.orchestration_mode),
             "OS Type": _os_type(vmss),
             "Admin Username": _admin_username(vmss),
             "Provisioning State": vmss.provisioning_state or "",

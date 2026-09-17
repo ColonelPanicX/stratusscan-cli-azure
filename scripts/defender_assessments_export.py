@@ -34,8 +34,7 @@ def _extract_resource_info(resource_details) -> tuple:
 def _status_code(status) -> str:
     if not status:
         return ""
-    code = getattr(status, "code", "") or ""
-    return str(code)
+    return utils.s(getattr(status, "code", None))
 
 
 def collect_assessments(subscription_id: str) -> list:
@@ -60,7 +59,7 @@ def collect_assessments(subscription_id: str) -> list:
                 severity = getattr(metadata, "severity", "") or ""
                 categories = getattr(metadata, "categories", None)
                 if categories:
-                    category = ", ".join(str(c) for c in categories)
+                    category = ", ".join(utils.s(c) for c in categories)
                 description = getattr(metadata, "description", "") or ""
                 remediation = getattr(metadata, "remediation_description", "") or ""
 

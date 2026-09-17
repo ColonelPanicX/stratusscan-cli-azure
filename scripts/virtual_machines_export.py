@@ -66,7 +66,7 @@ def _get_os_type(vm) -> str:
     try:
         profile = vm.storage_profile
         if profile and profile.os_disk and profile.os_disk.os_type:
-            return str(profile.os_disk.os_type)
+            return utils.s(profile.os_disk.os_type)
     except Exception:
         pass
     return ""

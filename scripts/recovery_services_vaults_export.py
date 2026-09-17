@@ -43,10 +43,10 @@ def main(subscription_id: str, subscription_name: str) -> None:
             "Name": vault.name,
             "Resource Group": utils.extract_resource_group(vault.id),
             "Location": vault.location,
-            "SKU": str(sku.name) if sku else "",
-            "Tier": str(getattr(sku, "tier", "")) if sku else "",
-            "Provisioning State": str(getattr(props, "provisioning_state", "")) if props else "",
-            "Public Network Access": str(getattr(props, "public_network_access", "")) if props else "",
+            "SKU": utils.s(sku.name) if sku else "",
+            "Tier": utils.s(getattr(sku, "tier", None)) if sku else "",
+            "Provisioning State": utils.s(getattr(props, "provisioning_state", None)) if props else "",
+            "Public Network Access": utils.s(getattr(props, "public_network_access", None)) if props else "",
             "Tags": "; ".join(f"{k}={v}" for k, v in tags.items()),
         })
 

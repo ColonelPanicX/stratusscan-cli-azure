@@ -43,11 +43,11 @@ def main(subscription_id: str, subscription_name: str) -> None:
                     "Storage Account": account,
                     "Share Name": s.name,
                     "Resource Group": rg,
-                    "Access Tier": str(getattr(s, "access_tier", "")) if getattr(s, "access_tier", None) else "",
+                    "Access Tier": utils.s(getattr(s, "access_tier", None)) if getattr(s, "access_tier", None) else "",
                     "Quota GB": getattr(s, "share_quota", "") if getattr(s, "share_quota", None) is not None else "",
                     "Used Capacity (bytes)": getattr(s, "share_usage_bytes", "") if getattr(s, "share_usage_bytes", None) is not None else "",
                     "Enabled Protocols": str(enabled_protocols),
-                    "Provisioning State": str(getattr(s, "provisioning_state", "")) if getattr(s, "provisioning_state", None) else "",
+                    "Provisioning State": utils.s(getattr(s, "provisioning_state", None)) if getattr(s, "provisioning_state", None) else "",
                 })
         except HttpResponseError as e:
             if getattr(e, "error", None) and getattr(e.error, "code", "") == "FeatureNotSupportedForAccount":

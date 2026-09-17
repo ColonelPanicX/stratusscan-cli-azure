@@ -60,7 +60,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
         rows.append({
             "Assignment ID": ra.name,
             "Principal ID": ra.principal_id or "",
-            "Principal Type": str(ra.principal_type) if ra.principal_type else "",
+            "Principal Type": utils.s(ra.principal_type),
             "Role Definition ID": _role_name_from_id(ra.role_definition_id or ""),
             "Scope": ra.scope or "",
             "Scope Type": _scope_type(ra.scope or ""),

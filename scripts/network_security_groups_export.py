@@ -27,13 +27,13 @@ def collect_nsgs(subscription_id: str) -> list:
 def _join(items) -> str:
     if not items:
         return ""
-    return ", ".join(str(i) for i in items)
+    return ", ".join(utils.s(i) for i in items)
 
 
 def _values(singular, plural) -> str:
     if plural:
         return _join(plural)
-    return str(singular) if singular else ""
+    return utils.s(singular)
 
 
 def _flatten_rules(nsg) -> list:
@@ -52,9 +52,9 @@ def _flatten_rules(nsg) -> list:
                 "Rule Name": rule.name,
                 "Rule Type": rule_type,
                 "Priority": rule.priority,
-                "Direction": str(rule.direction or ""),
-                "Access": str(rule.access or ""),
-                "Protocol": str(rule.protocol or ""),
+                "Direction": utils.s(rule.direction),
+                "Access": utils.s(rule.access),
+                "Protocol": utils.s(rule.protocol),
                 "Source Ports": _values(rule.source_port_range, rule.source_port_ranges),
                 "Destination Ports": _values(
                     rule.destination_port_range, rule.destination_port_ranges
@@ -88,11 +88,11 @@ def main(subscription_id: str, subscription_name: str) -> None:
         default_inbound = len(nsg.default_security_rules or [])
         inbound_rules = sum(
             1 for r in (nsg.security_rules or [])
-            if r.direction and str(r.direction).lower() == "inbound"
+            if utils.s(r.direction).lower() == "inbound"
         )
         outbound_rules = sum(
             1 for r in (nsg.security_rules or [])
-            if r.direction and str(r.direction).lower() == "outbound"
+            if utils.s(r.direction).lower() == "outbound"
         )
         associated_subnets = len(nsg.subnets or [])
         associated_nics = len(nsg.network_interfaces or [])

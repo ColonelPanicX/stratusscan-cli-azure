@@ -41,7 +41,7 @@ def _detail_rows(states: list) -> list:
             "Policy Definition": getattr(st, "policy_definition_name", "") or "",
             "Definition Action": getattr(st, "policy_definition_action", "") or "",
             "Definition Category": getattr(st, "policy_definition_category", "") or "",
-            "Timestamp": str(getattr(st, "timestamp", "")) if getattr(st, "timestamp", None) else "",
+            "Timestamp": utils.s(getattr(st, "timestamp", None)) if getattr(st, "timestamp", None) else "",
         })
     return rows
 

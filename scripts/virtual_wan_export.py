@@ -50,7 +50,8 @@ def main(subscription_id: str, subscription_name: str) -> None:
             "Name": wan.name,
             "Resource Group": rg,
             "Location": wan.location,
-            "Type": getattr(wan, "type_properties_type", "") or getattr(wan, "office365_local_breakout_category", "") or "",
+            "Type": utils.s(getattr(getattr(wan, "properties", None), "type", None)),
+            "Office 365 Local Breakout Category": utils.s(getattr(wan, "office365_local_breakout_category", None)),
             "Provisioning State": wan.provisioning_state or "",
             "Tags": "; ".join(f"{k}={v}" for k, v in tags.items()),
         })

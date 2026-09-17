@@ -41,9 +41,9 @@ def main(subscription_id: str, subscription_name: str) -> None:
             "Name": ident.name,
             "Resource Group": utils.extract_resource_group(ident.id),
             "Location": ident.location,
-            "Principal ID": str(ident.principal_id) if ident.principal_id else "",
-            "Client ID": str(ident.client_id) if ident.client_id else "",
-            "Tenant ID": str(ident.tenant_id) if ident.tenant_id else "",
+            "Principal ID": utils.s(ident.principal_id),
+            "Client ID": utils.s(ident.client_id),
+            "Tenant ID": utils.s(ident.tenant_id),
             "Tags": "; ".join(f"{k}={v}" for k, v in tags.items()),
         })
 

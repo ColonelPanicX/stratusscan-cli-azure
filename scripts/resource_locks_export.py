@@ -68,7 +68,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
             "Resource Name": res_name,
             "Resource Type": res_type,
             "Resource Group": _resource_group(scope),
-            "Lock Level": str(lock.level) if getattr(lock, "level", None) else "",
+            "Lock Level": utils.s(lock.level) if getattr(lock, "level", None) else "",
             "Notes": getattr(lock, "notes", "") or "",
             "Scope": scope,
         })

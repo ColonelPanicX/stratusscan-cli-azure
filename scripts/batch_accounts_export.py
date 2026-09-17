@@ -42,11 +42,11 @@ def main(subscription_id: str, subscription_name: str) -> None:
             "Resource Group": utils.extract_resource_group(acct.id),
             "Location": acct.location,
             "Account Endpoint": getattr(acct, "account_endpoint", "") or "",
-            "Provisioning State": str(acct.provisioning_state) if acct.provisioning_state else "",
-            "Pool Allocation Mode": str(getattr(acct, "pool_allocation_mode", "")) or "",
+            "Provisioning State": utils.s(acct.provisioning_state),
+            "Pool Allocation Mode": utils.s(getattr(acct, "pool_allocation_mode", None)),
             "Dedicated Core Quota": getattr(acct, "dedicated_core_quota", "") if getattr(acct, "dedicated_core_quota", None) is not None else "",
             "Low-Priority Core Quota": getattr(acct, "low_priority_core_quota", "") if getattr(acct, "low_priority_core_quota", None) is not None else "",
-            "Public Network Access": str(getattr(acct, "public_network_access", "")) or "",
+            "Public Network Access": utils.s(getattr(acct, "public_network_access", None)),
             "Tags": "; ".join(f"{k}={v}" for k, v in tags.items()),
         })
 

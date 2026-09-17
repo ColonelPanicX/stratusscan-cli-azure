@@ -52,8 +52,8 @@ def main(subscription_id: str, subscription_name: str) -> None:
             "Workspace-Based": "Yes" if workspace else "No (classic)",
             "Workspace": workspace.split("/")[-1] if workspace else "",
             "Retention (days)": getattr(comp, "retention_in_days", "") if getattr(comp, "retention_in_days", None) is not None else "",
-            "Ingestion Mode": str(getattr(comp, "ingestion_mode", "")) or "",
-            "Public Network Access (Ingestion)": str(getattr(comp, "public_network_access_for_ingestion", "")) or "",
+            "Ingestion Mode": utils.s(getattr(comp, "ingestion_mode", None)),
+            "Public Network Access (Ingestion)": utils.s(getattr(comp, "public_network_access_for_ingestion", None)),
             "Provisioning State": getattr(comp, "provisioning_state", "") or "",
             "Tags": "; ".join(f"{k}={v}" for k, v in tags.items()),
         })

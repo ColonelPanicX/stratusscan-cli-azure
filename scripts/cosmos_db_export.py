@@ -45,17 +45,17 @@ def main(subscription_id: str, subscription_name: str) -> None:
             "Name": acct.name,
             "Resource Group": rg,
             "Location": acct.location,
-            "Kind": str(acct.kind) if acct.kind else "",
-            "API": str(acct.kind) if acct.kind else "",
+            "Kind": utils.s(acct.kind),
+            "API": utils.s(acct.kind),
             "Consistency Level": (
-                str(acct.consistency_policy.default_consistency_level)
+                utils.s(acct.consistency_policy.default_consistency_level)
                 if acct.consistency_policy else ""
             ),
             "Document Endpoint": acct.document_endpoint or "",
             "Geo-replication Regions": locations,
             "Automatic Failover": acct.enable_automatic_failover,
             "Multiple Write Locations": acct.enable_multiple_write_locations,
-            "Public Network Access": str(acct.public_network_access) if acct.public_network_access else "",
+            "Public Network Access": utils.s(acct.public_network_access),
             "Provisioning State": acct.provisioning_state or "",
             "Tags": "; ".join(f"{k}={v}" for k, v in tags.items()),
         })
