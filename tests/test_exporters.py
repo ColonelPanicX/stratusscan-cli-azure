@@ -1,9 +1,12 @@
 """Exporter unit tests — mocked Azure SDK models, no live Azure."""
 
 import enum
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
@@ -131,12 +134,33 @@ def test_extract_savings_annual_only_leaves_monthly_blank():
     result = advisor_export._extract_savings({"annualSavingsAmount": "2850"})
     assert result["Potential Savings (Monthly)"] == ""
     assert result["Potential Savings (Annual)"] == 2850.0
-    assert result["Savings Currency"] == "USD"
 
 
-def test_extract_savings_accepts_estimated_annual_alias():
-    result = advisor_export._extract_savings({"estimatedAnnualSavings": "1200"})
-    assert result["Potential Savings (Annual)"] == 1200.0
+def test_extract_savings_currency_blank_when_absent():
+    result = advisor_export._extract_savings({"savingsAmount": "10", "annualSavingsAmount": "120"})
+    assert result["Savings Currency"] == ""
+
+
+def test_extract_savings_reads_only_documented_amount_keys():
+    result = advisor_export._extract_savings(
+        {"monthlySavingsAmount": "99", "estimatedAnnualSavings": "1200"}
+    )
+    assert result["Potential Savings (Monthly)"] == ""
+    assert result["Potential Savings (Annual)"] == ""
+
+
+@pytest.mark.parametrize(
+    "extended, expected",
+    [
+        ({"region": "usgovvirginia", "Region": "ignored", "location": "ignored"}, "usgovvirginia"),
+        ({"Region": "usgovarizona", "location": "ignored"}, "usgovarizona"),
+        ({"location": "usgovtexas"}, "usgovtexas"),
+        ({"region": "", "Region": None, "location": "usgovtexas"}, "usgovtexas"),
+        ({"ServerName": "s1"}, ""),
+    ],
+)
+def test_extract_savings_region_fallback_chain(extended, expected):
+    assert advisor_export._extract_savings(extended)["Region"] == expected
 
 
 def test_extract_savings_carries_reservation_context():
@@ -176,6 +200,192 @@ def test_extract_savings_ignores_non_numeric_amounts():
     result = advisor_export._extract_savings({"savingsAmount": "N/A", "savingsCurrency": "USD"})
     assert result["Potential Savings (Monthly)"] == ""
     assert result["Savings Currency"] == ""
+
+
+# --- SSAZR-115 / C-7: Advisor resource identity ---------------------------------
+
+_SUB = "/subscriptions/00000000-0000-0000-0000-000000000001"
+_VM_ID = f"{_SUB}/resourceGroups/rg1/providers/Microsoft.Compute/virtualMachines/vm1"
+_DB_ID = f"{_SUB}/resourceGroups/rg1/providers/Microsoft.Sql/servers/s1/databases/d1"
+_REC_SUFFIX = "/providers/Microsoft.Advisor/recommendations/11111111-2222-3333-4444-555555555555"
+
+
+def _rec(**overrides):
+    fields = {
+        "id": None, "category": "Cost", "impact": "High",
+        "impacted_field": None, "impacted_value": None,
+        "last_updated": None, "recommendation_type_id": None,
+        "short_description": SimpleNamespace(problem="p", solution="s"),
+        "extended_properties": None, "resource_metadata": None,
+    }
+    fields.update(overrides)
+    return SimpleNamespace(**fields)
+
+
+@pytest.mark.parametrize(
+    "resource_id, expected",
+    [
+        (_VM_ID, ("vm1", "Microsoft.Compute/virtualMachines")),
+        (_DB_ID, ("d1", "Microsoft.Sql/servers/databases")),
+        (
+            f"{_VM_ID}/providers/Microsoft.Security/assessments/a1",
+            ("a1", "Microsoft.Security/assessments"),
+        ),
+        (f"{_SUB}/resourcegroups/rg1/PROVIDERS/Microsoft.Web/sites/app1", ("app1", "Microsoft.Web/sites")),
+        (_SUB, ("00000000-0000-0000-0000-000000000001", "Microsoft.Resources/subscriptions")),
+        (f"{_SUB}/resourceGroups/rg1", ("rg1", "Microsoft.Resources/subscriptions/resourceGroups")),
+        (f"{_SUB}/providers/Microsoft.Compute/virtualMachines", ("", "Microsoft.Compute/virtualMachines")),
+        ("Microsoft.Compute/virtualMachines", ("", "")),
+        ("", ("", "")),
+        (None, ("", "")),
+    ],
+)
+def test_parse_resource_id(resource_id, expected):
+    assert advisor_export._parse_resource_id(resource_id) == expected
+
+
+def test_build_row_reads_resource_id_from_resource_metadata():
+    row = advisor_export._build_row(
+        _rec(
+            id=f"{_VM_ID}{_REC_SUFFIX}",
+            impacted_field="Microsoft.Compute/virtualMachines",
+            impacted_value="vm1",
+            resource_metadata=SimpleNamespace(resource_id=_VM_ID, source=None),
+        )
+    )
+    assert row["Resource ID"] == _VM_ID
+    assert row["Resource Name"] == "vm1"
+    assert row["Resource Type"] == "Microsoft.Compute/virtualMachines"
+
+
+def test_build_row_derives_resource_id_from_recommendation_id():
+    rec_id = f"{_DB_ID}/PROVIDERS/microsoft.advisor/Recommendations/abc-123"
+    for metadata in (None, SimpleNamespace(resource_id=None), SimpleNamespace(resource_id="")):
+        row = advisor_export._build_row(_rec(id=rec_id, resource_metadata=metadata))
+        assert row["Resource ID"] == _DB_ID
+        assert row["Resource Name"] == "d1"
+        assert row["Resource Type"] == "Microsoft.Sql/servers/databases"
+
+
+def test_build_row_impacted_field_never_lands_in_resource_id():
+    row = advisor_export._build_row(
+        _rec(impacted_field="Microsoft.Compute/virtualMachines", impacted_value="vm1")
+    )
+    assert row["Resource ID"] == ""
+    assert row["Resource Name"] == "vm1"
+    assert row["Resource Type"] == "Microsoft.Compute/virtualMachines"
+
+
+def test_build_row_unrecognised_recommendation_id_leaves_resource_id_blank():
+    row = advisor_export._build_row(_rec(id=f"{_VM_ID}/providers/Microsoft.Other/things/t1"))
+    assert row["Resource ID"] == ""
+
+
+def test_build_row_subscription_scoped_recommendation():
+    row = advisor_export._build_row(
+        _rec(
+            id=f"{_SUB}{_REC_SUFFIX}",
+            impacted_field="Microsoft.Subscriptions/subscriptions",
+            impacted_value="00000000-0000-0000-0000-000000000001",
+            resource_metadata=SimpleNamespace(resource_id=_SUB),
+        )
+    )
+    assert row["Resource ID"] == _SUB
+    assert row["Resource Name"] == "00000000-0000-0000-0000-000000000001"
+    assert row["Resource Type"] == "Microsoft.Subscriptions/subscriptions"
+
+    bare = advisor_export._build_row(_rec(id=f"{_SUB}{_REC_SUFFIX}"))
+    assert bare["Resource ID"] == _SUB
+    assert bare["Resource Name"] == "00000000-0000-0000-0000-000000000001"
+    assert bare["Resource Type"] == "Microsoft.Resources/subscriptions"
+
+
+def test_build_row_renders_enum_members_as_values():
+    class _Category(str, enum.Enum):
+        COST = "Cost"
+
+    row = advisor_export._build_row(_rec(category=_Category.COST, impact=None))
+    assert row["Category"] == "Cost"
+    assert row["Impact"] == ""
+
+
+def test_build_row_extended_properties_json_round_trips():
+    extended = {"Region": "usgovarizona", "ServerName": "s1", "savingsAmount": "12.5", "zKey": "z"}
+    row = advisor_export._build_row(
+        _rec(extended_properties=extended, recommendation_type_id="type-guid")
+    )
+    assert json.loads(row["Extended Properties (JSON)"]) == extended
+    assert row["Extended Properties (JSON)"] == json.dumps(extended, sort_keys=True)
+    assert row["Recommendation Type ID"] == "type-guid"
+    assert row["Region"] == "usgovarizona"
+    assert row["Savings Currency"] == ""
+
+    assert advisor_export._build_row(_rec())["Extended Properties (JSON)"] == ""
+
+
+def test_build_row_keeps_existing_columns_in_place_and_appends_new_ones():
+    assert list(advisor_export._build_row(_rec())) == [
+        "Category", "Impact", "Resource ID", "Resource Name", "Resource Type",
+        "Recommendation", "Solution",
+        "Potential Savings (Monthly)", "Potential Savings (Annual)", "Savings Currency",
+        "Reservation Term", "Lookback (days)", "Region",
+        "Last Updated", "Recommendation Type ID", "Extended Properties (JSON)",
+    ]
+
+
+def test_collect_recommendations_builds_a_row_per_recommendation(monkeypatch):
+    recs = [
+        _rec(id=f"{_VM_ID}{_REC_SUFFIX}", resource_metadata=SimpleNamespace(resource_id=_VM_ID)),
+        _rec(id=f"{_DB_ID}{_REC_SUFFIX}"),
+    ]
+    client = SimpleNamespace(recommendations=SimpleNamespace(list=lambda: iter(recs)))
+    monkeypatch.setattr(advisor_export.utils, "get_azure_client", lambda service, sub_id: client)
+
+    rows = advisor_export.collect_recommendations("sub-id")
+    assert [r["Resource ID"] for r in rows] == [_VM_ID, _DB_ID]
+
+
+def test_build_row_against_real_sdk_model():
+    models = pytest.importorskip("azure.mgmt.advisor.models")
+    payload = {
+        "id": f"{_VM_ID}{_REC_SUFFIX}",
+        "name": "11111111-2222-3333-4444-555555555555",
+        "type": "Microsoft.Advisor/recommendations",
+        "properties": {
+            "category": "Cost",
+            "impact": "Medium",
+            "impactedField": "Microsoft.Compute/virtualMachines",
+            "impactedValue": "vm1",
+            "lastUpdated": "2017-02-24T22:24:43.3216408Z",
+            "recommendationTypeId": "e10b1381-5f0a-47ff-8c7b-37bd13d7c974",
+            "shortDescription": {"problem": "Right-size the VM", "solution": "Resize it"},
+            "extendedProperties": {"savingsAmount": "237.5", "annualSavingsAmount": "2850"},
+            "resourceMetadata": {
+                "resourceId": _VM_ID,
+                "source": f"{_VM_ID}/providers/Microsoft.Security/assessments/a1",
+                "singular": "Virtual machine",
+                "plural": "Virtual machines",
+            },
+        },
+    }
+    rec = models.ResourceRecommendationBase.deserialize(payload)
+
+    row = advisor_export._build_row(rec)
+    assert row["Category"] == "Cost"
+    assert row["Impact"] == "Medium"
+    assert row["Resource ID"] == _VM_ID
+    assert row["Resource Name"] == "vm1"
+    assert row["Resource Type"] == "Microsoft.Compute/virtualMachines"
+    assert row["Recommendation"] == "Right-size the VM"
+    assert row["Solution"] == "Resize it"
+    assert row["Potential Savings (Monthly)"] == 237.5
+    assert row["Potential Savings (Annual)"] == 2850.0
+    assert row["Savings Currency"] == ""
+    assert row["Last Updated"].startswith("2017-02-24T22:24:43")
+    assert row["Recommendation Type ID"] == "e10b1381-5f0a-47ff-8c7b-37bd13d7c974"
+
+    rec.resource_metadata = None
+    assert advisor_export._build_row(rec)["Resource ID"] == _VM_ID
 
 
 # --- SSAZR-112: NSG rule counting must survive Enum-typed direction -------------
