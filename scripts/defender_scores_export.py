@@ -18,6 +18,10 @@ utils.log_script_start("defender_scores_export.py", "Defender Secure Score & Pla
 log = utils.get_logger()
 
 
+def _blank_if_none(value):
+    return "" if value is None else value
+
+
 def collect_secure_scores(subscription_id: str) -> list:
     client = utils.get_azure_client("security", subscription_id)
     log.info("Listing secure scores for subscription %s", subscription_id)
@@ -25,25 +29,13 @@ def collect_secure_scores(subscription_id: str) -> list:
     rows = []
     try:
         for score in client.secure_scores.list():
-            current = 0.0
-            max_score = 0.0
-            percentage = 0.0
-            weight = 0
-
-            if hasattr(score, "score") and score.score:
-                current = getattr(score.score, "current", 0.0) or 0.0
-                max_score = getattr(score.score, "max", 0.0) or 0.0
-                percentage = getattr(score.score, "percentage", 0.0) or 0.0
-
-            if hasattr(score, "weight") and score.weight is not None:
-                weight = score.weight
-
+            percentage = getattr(score, "percentage", None)
             rows.append({
                 "Score Name": getattr(score, "display_name", "") or getattr(score, "name", "") or "",
-                "Current Score": current,
-                "Max Score": max_score,
-                "Percentage": round(percentage * 100, 2) if percentage <= 1.0 else round(percentage, 2),
-                "Weight": weight,
+                "Current Score": _blank_if_none(getattr(score, "current", None)),
+                "Max Score": _blank_if_none(getattr(score, "max", None)),
+                "Percentage": "" if percentage is None else round(percentage * 100, 2),
+                "Weight": _blank_if_none(getattr(score, "weight", None)),
             })
     except Exception as e:
         log.warning("Failed to list secure scores: %s", e)
@@ -57,14 +49,15 @@ def collect_defender_plans(subscription_id: str) -> list:
 
     rows = []
     try:
-        result = client.pricings.list()
+        result = client.pricings.list(f"subscriptions/{subscription_id}")
         pricings = result.value if hasattr(result, "value") else list(result)
         for p in pricings:
+            pricing_tier = utils.s(getattr(p, "pricing_tier", None))
             rows.append({
                 "Plan Name": getattr(p, "name", "") or "",
-                "Pricing Tier": getattr(p, "pricing_tier", "") or "",
+                "Pricing Tier": pricing_tier,
                 "Free Trial Remaining": getattr(p, "free_trial_remaining_time", "") or "",
-                "Enabled": "Yes" if getattr(p, "pricing_tier", "").lower() == "standard" else "No",
+                "Enabled": "Yes" if pricing_tier.lower() == "standard" else "No",
             })
     except Exception as e:
         log.warning("Failed to list Defender plans: %s", e)

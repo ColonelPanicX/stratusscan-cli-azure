@@ -14,6 +14,7 @@ Design constraints:
 """
 
 import datetime
+import enum
 import json
 import logging
 import os
@@ -224,6 +225,33 @@ def _adjust_column_widths(ws) -> None:
         pass
 
 
+def s(value: Any) -> str:
+    """Return a cell-safe string: None → "", Enum member → its value, else str(value)."""
+    if value is None:
+        return ""
+    if isinstance(value, enum.Enum):
+        value = value.value
+    return str(value)
+
+
+def _enum_to_value(value: Any) -> Any:
+    return value.value if isinstance(value, enum.Enum) else value
+
+
+def _normalize_cells(df):
+    from pandas.api.types import is_bool_dtype, is_datetime64_any_dtype, is_numeric_dtype
+
+    out = df.copy()
+    for col in out.columns:
+        dtype = out[col].dtype
+        # pandas 3 infers str-mixin Enum columns as StringDtype, so filtering on
+        # object dtype would skip exactly the columns that need normalizing.
+        if is_numeric_dtype(dtype) or is_bool_dtype(dtype) or is_datetime64_any_dtype(dtype):
+            continue
+        out[col] = out[col].map(_enum_to_value)
+    return out
+
+
 def save_dataframe_to_excel(df, filename: str, sheet_name: str = "Export") -> str:
     """
     Write a single DataFrame to an Excel workbook.
@@ -237,7 +265,9 @@ def save_dataframe_to_excel(df, filename: str, sheet_name: str = "Export") -> st
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            df.to_excel(filename, index=False, sheet_name=sheet_name, engine="openpyxl")
+            _normalize_cells(df).to_excel(
+                filename, index=False, sheet_name=sheet_name, engine="openpyxl"
+            )
         wb = load_workbook(filename)
         ws = wb[sheet_name]
         _adjust_column_widths(ws)
@@ -269,7 +299,7 @@ def save_multiple_dataframes_to_excel(sheets: Dict[str, Any], filename: str) -> 
             with pd.ExcelWriter(filename, engine="openpyxl") as writer:
                 for sheet_name, df in sheets.items():
                     safe_name = sheet_name[:31]  # Excel sheet name limit
-                    df.to_excel(writer, index=False, sheet_name=safe_name)
+                    _normalize_cells(df).to_excel(writer, index=False, sheet_name=safe_name)
         wb = load_workbook(filename)
         for ws in wb.worksheets:
             _adjust_column_widths(ws)
@@ -474,7 +504,7 @@ _CLIENT_MAP: Dict[str, tuple] = {
     "cosmosdb": ("azure.mgmt.cosmosdb", "CosmosDBManagementClient", True),
     "policy": ("azure.mgmt.resource.policy", "PolicyClient", True),
     "locks": ("azure.mgmt.resource.locks", "ManagementLockClient", True),
-    "managementgroups": ("azure.mgmt.managementgroups", "ManagementGroupsAPI", False),
+    "managementgroups": ("azure.mgmt.managementgroups", "ManagementGroupsMgmtClient", False),
     "security": ("azure.mgmt.security", "SecurityCenter", True),
     "advisor": ("azure.mgmt.advisor", "AdvisorManagementClient", True),
     "monitor": ("azure.mgmt.monitor", "MonitorManagementClient", True),
@@ -535,13 +565,23 @@ def get_azure_client(service_name: str, subscription_id: Optional[str] = None) -
     if needs_sub and not subscription_id:
         raise ValueError(f"subscription_id is required for service '{service_name}'")
 
+    pkg = "-".join(module_path.split(".")[:3])
     try:
         import importlib
         mod = importlib.import_module(module_path)
-        cls = getattr(mod, class_name)
     except ImportError as exc:
-        pkg = module_path.replace(".", "-")
         raise ImportError(f"Missing package: pip install {pkg}") from exc
+    try:
+        cls = getattr(mod, class_name)
+    except AttributeError as exc:
+        try:
+            installed = _pkg_version(pkg)
+        except PackageNotFoundError:
+            installed = "unknown"
+        raise ImportError(
+            f"{module_path} has no {class_name}: installed {pkg} {installed} is outside "
+            f"the supported range. Install the version range pinned for {pkg} in pyproject.toml."
+        ) from exc
 
     cred = _get_credential()
     environment = detect_environment()

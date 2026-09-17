@@ -21,7 +21,7 @@ log = utils.get_logger()
 def collect_definitions(subscription_id: str) -> list:
     client = utils.get_azure_client("policy", subscription_id)
     log.info("Listing custom policy definitions in subscription %s", subscription_id)
-    return [d for d in client.policy_definitions.list() if str(getattr(d, "policy_type", "")) == "Custom"]
+    return [d for d in client.policy_definitions.list() if utils.s(getattr(d, "policy_type", None)) == "Custom"]
 
 
 def _metadata_value(definition, key: str) -> str:
@@ -57,7 +57,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
             "Name": d.name or "",
             "Display Name": getattr(d, "display_name", "") or "",
             "Description": getattr(d, "description", "") or "",
-            "Policy Type": str(getattr(d, "policy_type", "")) or "",
+            "Policy Type": utils.s(getattr(d, "policy_type", None)),
             "Mode": getattr(d, "mode", "") or "",
             "Category": _metadata_value(d, "category"),
             "Effect": _effect(d),

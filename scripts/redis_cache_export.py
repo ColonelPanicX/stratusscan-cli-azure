@@ -60,7 +60,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
             "Host Name": cache.host_name or "",
             "SSL Port": cache.ssl_port or "",
             "Non-SSL Port": cache.port if cache.enable_non_ssl_port else "Disabled",
-            "Minimum TLS Version": str(cache.minimum_tls_version) if cache.minimum_tls_version else "",
+            "Minimum TLS Version": utils.s(cache.minimum_tls_version),
             "Public Network Access": cache.public_network_access or "",
             "Shard Count": cache.shard_count if cache.shard_count else "",
             "Tags": "; ".join(f"{k}={v}" for k, v in tags.items()),

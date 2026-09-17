@@ -58,9 +58,9 @@ def main(subscription_id: str, subscription_name: str) -> None:
             "Resource Group": rg,
             "Location": pip.location,
             "IP Address": pip.ip_address or "Not assigned",
-            "Allocation Method": str(pip.public_ip_allocation_method) if pip.public_ip_allocation_method else "",
+            "Allocation Method": utils.s(pip.public_ip_allocation_method),
             "SKU": pip.sku.name if pip.sku else "",
-            "Version": str(pip.public_ip_address_version) if pip.public_ip_address_version else "",
+            "Version": utils.s(pip.public_ip_address_version),
             "DNS Label": (
                 pip.dns_settings.domain_name_label
                 if pip.dns_settings and pip.dns_settings.domain_name_label

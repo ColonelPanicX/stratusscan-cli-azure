@@ -1,6 +1,9 @@
 """Smoke tests for utils.py — pure helpers and registry integrity, no live Azure."""
 
+import enum
 import re
+
+import pytest
 
 import utils
 
@@ -138,3 +141,95 @@ def test_client_map_entries_are_well_formed():
         assert module_path.startswith("azure."), f"{key!r} module path looks wrong: {module_path}"
         assert class_name and class_name[0].isupper(), f"{key!r} class name looks wrong: {class_name}"
         assert isinstance(needs_sub, bool), f"{key!r} needs_sub must be bool"
+
+
+class _StrEnum(str, enum.Enum):
+    INBOUND = "Inbound"
+
+
+class _PlainEnum(enum.Enum):
+    STANDARD = "Standard"
+    COUNT = 3
+
+
+def _read_rows(path, sheet):
+    from openpyxl import load_workbook
+
+    return [[c.value for c in row] for row in load_workbook(path)[sheet].iter_rows(min_row=2)]
+
+
+def test_s_normalizes_none_enum_and_scalars():
+    assert utils.s(None) == ""
+    assert utils.s(_StrEnum.INBOUND) == "Inbound"
+    assert utils.s(_PlainEnum.STANDARD) == "Standard"
+    assert utils.s(_PlainEnum.COUNT) == "3"
+    assert utils.s("plain") == "plain"
+    assert utils.s(0) == "0"
+    assert utils.s(False) == "False"
+
+
+def test_s_never_renders_the_enum_class_name():
+    assert "INBOUND" not in utils.s(_StrEnum.INBOUND)
+    assert "_StrEnum" not in utils.s(_StrEnum.INBOUND)
+
+
+def test_save_dataframe_to_excel_writes_enum_values_and_blank_none(tmp_path):
+    import pandas as pd
+
+    df = pd.DataFrame(
+        [
+            {"Direction": _StrEnum.INBOUND, "Tier": _PlainEnum.STANDARD, "Note": None, "Count": 2},
+            {"Direction": "Outbound", "Tier": _PlainEnum.STANDARD, "Note": "x", "Count": 0},
+        ]
+    )
+    path = str(tmp_path / "single.xlsx")
+
+    utils.save_dataframe_to_excel(df, path)
+
+    assert _read_rows(path, "Export") == [
+        ["Inbound", "Standard", None, 2],
+        ["Outbound", "Standard", "x", 0],
+    ]
+
+
+def test_save_dataframe_to_excel_does_not_mutate_the_callers_dataframe(tmp_path):
+    import pandas as pd
+
+    df = pd.DataFrame([{"Direction": _StrEnum.INBOUND}])
+
+    utils.save_dataframe_to_excel(df, str(tmp_path / "keep.xlsx"))
+
+    assert df["Direction"].iloc[0] is _StrEnum.INBOUND
+
+
+def test_save_multiple_dataframes_to_excel_normalizes_every_sheet(tmp_path):
+    import pandas as pd
+
+    path = str(tmp_path / "multi.xlsx")
+
+    utils.save_multiple_dataframes_to_excel(
+        {
+            "NSGs": pd.DataFrame([{"Direction": _StrEnum.INBOUND, "Rules": 4}]),
+            "Rules": pd.DataFrame([{"Access": _PlainEnum.STANDARD, "Note": None}]),
+        },
+        path,
+    )
+
+    assert _read_rows(path, "NSGs") == [["Inbound", 4]]
+    assert _read_rows(path, "Rules") == [["Standard", None]]
+
+
+def test_get_azure_client_reports_renamed_class_as_import_error(monkeypatch):
+    monkeypatch.setitem(utils._CLIENT_MAP, "subscription", ("json", "NoSuchClient", False))
+
+    with pytest.raises(ImportError, match="NoSuchClient.*pyproject.toml"):
+        utils.get_azure_client("subscription")
+
+
+def test_get_azure_client_pip_hint_uses_distribution_name_for_nested_modules(monkeypatch):
+    monkeypatch.setitem(
+        utils._CLIENT_MAP, "resource", ("azure.mgmt.doesnotexist.resources", "Client", True)
+    )
+
+    with pytest.raises(ImportError, match=r"^Missing package: pip install azure-mgmt-doesnotexist$"):
+        utils.get_azure_client("resource", "sub-id")

@@ -28,7 +28,7 @@ def _encryption_type(disk) -> str:
     try:
         enc = disk.encryption
         if enc and enc.type:
-            return str(enc.type)
+            return utils.s(enc.type)
     except Exception:
         pass
     return "PlatformManagedKey"
@@ -63,8 +63,8 @@ def main(subscription_id: str, subscription_name: str) -> None:
             "Location": disk.location,
             "Size (GiB)": disk.disk_size_gb or "",
             "SKU": disk.sku.name if disk.sku else "",
-            "OS Type": str(disk.os_type) if disk.os_type else "Data",
-            "State": str(disk.disk_state) if disk.disk_state else "",
+            "OS Type": utils.s(disk.os_type) if disk.os_type else "Data",
+            "State": utils.s(disk.disk_state),
             "Encryption": _encryption_type(disk),
             "Attached VM": _attached_vm(disk),
             "Orphaned": "Yes" if not disk.managed_by else "No",

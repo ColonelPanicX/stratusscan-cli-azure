@@ -21,7 +21,7 @@ log = utils.get_logger()
 def _join(items) -> str:
     if not items:
         return ""
-    return ", ".join(str(i) for i in items)
+    return ", ".join(utils.s(i) for i in items)
 
 
 def _rule_type_label(rule) -> str:
@@ -54,8 +54,8 @@ def _extract_application_rule(rule, base: dict) -> dict:
     protocols = []
     for p in (rule.protocols or []):
         port = getattr(p, "port", "")
-        ptype = getattr(p, "protocol_type", "")
-        protocols.append(f"{ptype}:{port}" if port else str(ptype))
+        ptype = utils.s(getattr(p, "protocol_type", None))
+        protocols.append(f"{ptype}:{port}" if port else ptype)
     row["Protocols"] = ", ".join(protocols)
     row["Source Addresses"] = _join(rule.source_addresses)
     row["Source IP Groups"] = _join(rule.source_ip_groups)
@@ -143,7 +143,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
                 rc_priority = getattr(rc, "priority", "") or ""
                 action = ""
                 if hasattr(rc, "action") and rc.action:
-                    action = getattr(rc.action, "type", "") or ""
+                    action = utils.s(getattr(rc.action, "type", None))
 
                 base = {
                     "Policy Name": policy_name,

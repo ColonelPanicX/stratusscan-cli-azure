@@ -44,8 +44,8 @@ def main(subscription_id: str, subscription_name: str) -> None:
             "Location": prof.location,
             "SKU": sku.name if sku else "",
             "Kind": getattr(prof, "kind", "") or "",
-            "Provisioning State": str(prof.provisioning_state) if prof.provisioning_state else "",
-            "Resource State": str(prof.resource_state) if prof.resource_state else "",
+            "Provisioning State": utils.s(prof.provisioning_state),
+            "Resource State": utils.s(prof.resource_state),
             "Front Door ID": getattr(prof, "front_door_id", "") or "",
             "Tags": "; ".join(f"{k}={v}" for k, v in tags.items()),
         })

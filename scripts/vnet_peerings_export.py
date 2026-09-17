@@ -39,7 +39,7 @@ def collect_peerings(subscription_id: str) -> list:
                     peering.remote_virtual_network.id
                     if peering.remote_virtual_network else ""
                 ),
-                "Peering State": str(peering.peering_state) if peering.peering_state else "",
+                "Peering State": utils.s(peering.peering_state),
                 "Allow VNet Access": peering.allow_virtual_network_access,
                 "Allow Forwarded Traffic": peering.allow_forwarded_traffic,
                 "Allow Gateway Transit": peering.allow_gateway_transit,

@@ -53,7 +53,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
             "Resource Group": utils.extract_resource_group(ns.id),
             "Location": ns.location,
             "SKU": sku.name if sku else "",
-            "Tier": str(sku.tier) if sku and getattr(sku, "tier", None) else "",
+            "Tier": utils.s(sku.tier) if sku and getattr(sku, "tier", None) else "",
             "Capacity": getattr(sku, "capacity", "") if sku else "",
             "Provisioning State": ns.provisioning_state or "",
             "Auto-Inflate": "Yes" if getattr(ns, "is_auto_inflate_enabled", False) else "No",

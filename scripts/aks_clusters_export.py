@@ -47,7 +47,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
             "Location": cluster.location,
             "Kubernetes Version": cluster.kubernetes_version or "",
             "Provisioning State": cluster.provisioning_state or "",
-            "Power State": str(cluster.power_state.code) if cluster.power_state else "",
+            "Power State": utils.s(cluster.power_state.code) if cluster.power_state else "",
             "Node Count": total_nodes,
             "Node VM Sizes": node_vm_sizes,
             "Agent Pool Count": len(agent_pools),

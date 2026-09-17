@@ -42,10 +42,10 @@ def main(subscription_id: str, subscription_name: str) -> None:
             "Name": acct.name,
             "Resource Group": utils.extract_resource_group(acct.id),
             "Location": acct.location,
-            "SKU": str(sku.name) if sku else "",
-            "State": str(acct.state) if getattr(acct, "state", None) else "",
-            "Created": str(acct.creation_time) if getattr(acct, "creation_time", None) else "",
-            "Last Modified": str(acct.last_modified_time) if getattr(acct, "last_modified_time", None) else "",
+            "SKU": utils.s(sku.name) if sku else "",
+            "State": utils.s(acct.state) if getattr(acct, "state", None) else "",
+            "Created": utils.s(acct.creation_time) if getattr(acct, "creation_time", None) else "",
+            "Last Modified": utils.s(acct.last_modified_time) if getattr(acct, "last_modified_time", None) else "",
             "Tags": "; ".join(f"{k}={v}" for k, v in tags.items()),
         })
 

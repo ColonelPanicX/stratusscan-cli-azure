@@ -60,7 +60,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
             "Soft Delete Retention Days": props.soft_delete_retention_in_days if props else "",
             "Purge Protection Enabled": props.enable_purge_protection if props else "",
             "RBAC Authorization": props.enable_rbac_authorization if props else "",
-            "Public Network Access": str(props.public_network_access) if props and props.public_network_access else "",
+            "Public Network Access": utils.s(props.public_network_access) if props and props.public_network_access else "",
             "Vault URI": props.vault_uri if props else "",
             "Tags": "; ".join(f"{k}={v}" for k, v in tags.items()),
         })
