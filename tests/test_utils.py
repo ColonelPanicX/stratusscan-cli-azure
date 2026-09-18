@@ -633,3 +633,53 @@ def test_setup_logging_filename_carries_script_sub_and_seconds(monkeypatch, tmp_
         for handler in list(logging.getLogger("stratusscan").handlers):
             handler.close()
         logging.getLogger("stratusscan").handlers = []
+
+
+# --- SSAZR-119: subscription-wide listing helper ------------------------------------
+
+
+def test_list_subscription_wide_uses_the_first_existing_method():
+    from types import SimpleNamespace
+
+    ops = SimpleNamespace(
+        list_by_subscription=lambda: iter(["from-list-by-subscription"]),
+        list=lambda: pytest.fail("first name exists, second must not be called"),
+    )
+    assert list(utils.list_subscription_wide(ops, "list_by_subscription", "list")) == [
+        "from-list-by-subscription"
+    ]
+
+
+def test_list_subscription_wide_falls_back_to_a_later_name():
+    from types import SimpleNamespace
+
+    ops = SimpleNamespace(list=lambda: iter(["from-list"]))
+    assert list(utils.list_subscription_wide(ops, "list_by_subscription", "list")) == ["from-list"]
+
+
+def test_list_subscription_wide_skips_non_callable_attributes():
+    from types import SimpleNamespace
+
+    ops = SimpleNamespace(list_by_subscription="not a method", list=lambda: iter(["x"]))
+    assert list(utils.list_subscription_wide(ops, "list_by_subscription", "list")) == ["x"]
+
+
+def test_list_subscription_wide_raises_naming_every_method_tried():
+    from types import SimpleNamespace
+
+    class RedisOperations:
+        list_by_resource_group = staticmethod(lambda rg: iter([]))
+
+    with pytest.raises(AttributeError) as exc:
+        utils.list_subscription_wide(RedisOperations(), "list_by_subscription", "list", "list_all")
+    assert "RedisOperations" in str(exc.value)
+    assert "list_by_subscription, list, list_all" in str(exc.value)
+    with pytest.raises(AttributeError):
+        utils.list_subscription_wide(SimpleNamespace(), "list")
+
+
+def test_list_subscription_wide_requires_at_least_one_name():
+    from types import SimpleNamespace
+
+    with pytest.raises(ValueError):
+        utils.list_subscription_wide(SimpleNamespace(list=lambda: iter([])))

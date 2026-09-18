@@ -11,7 +11,6 @@ except ImportError:
     import utils
 
 import pandas as pd
-from azure.core.exceptions import HttpResponseError
 
 utils.setup_logging("postgresql-flexible-export")
 utils.log_script_start("postgresql_flexible_export.py", "PostgreSQL Flexible Server Export")
@@ -19,22 +18,10 @@ utils.log_script_start("postgresql_flexible_export.py", "PostgreSQL Flexible Ser
 log = utils.get_logger()
 
 
-def collect_servers(subscription_id: str) -> tuple:
+def collect_servers(subscription_id: str) -> list:
     client = utils.get_azure_client("postgresql", subscription_id)
     log.info("Listing PostgreSQL flexible servers in subscription %s", subscription_id)
-    if hasattr(client.servers, "list"):
-        return list(client.servers.list()), []
-
-    resource = utils.get_azure_client("resource", subscription_id)
-    servers = []
-    errors: list = []
-    for rg in resource.resource_groups.list():
-        try:
-            servers.extend(client.servers.list_by_resource_group(rg.name))
-        except HttpResponseError as exc:
-            errors.append(utils.error_record(rg.name, "servers.list_by_resource_group", exc))
-            log.warning("Failed to list PostgreSQL flexible servers in %s: %s", rg.name, exc)
-    return servers, errors
+    return list(utils.list_subscription_wide(client.servers, "list_by_subscription", "list"))
 
 
 def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
@@ -42,10 +29,11 @@ def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     if not utils.is_service_available_in_environment("postgresql", environment):
         sys.exit(0)
 
-    servers, errors = collect_servers(subscription_id)
-    if not servers and not errors:
+    servers = collect_servers(subscription_id)
+    if not servers:
         raise utils.NoResourcesFound("PostgreSQL flexible servers")
 
+    errors: list = []
     rows = []
     for srv in servers:
         sku = srv.sku

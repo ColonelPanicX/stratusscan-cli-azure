@@ -11,7 +11,6 @@ except ImportError:
     import utils
 
 import pandas as pd
-from azure.core.exceptions import HttpResponseError
 
 utils.setup_logging("api-management-export")
 utils.log_script_start("api_management_export.py", "API Management Services Export")
@@ -19,22 +18,12 @@ utils.log_script_start("api_management_export.py", "API Management Services Expo
 log = utils.get_logger()
 
 
-def collect_services(subscription_id: str) -> tuple:
+def collect_services(subscription_id: str) -> list:
     client = utils.get_azure_client("apimanagement", subscription_id)
     log.info("Listing API Management services in subscription %s", subscription_id)
-    if hasattr(client.api_management_service, "list"):
-        return list(client.api_management_service.list()), []
-
-    resource = utils.get_azure_client("resource", subscription_id)
-    services = []
-    errors: list = []
-    for rg in resource.resource_groups.list():
-        try:
-            services.extend(client.api_management_service.list_by_resource_group(rg.name))
-        except HttpResponseError as exc:
-            errors.append(utils.error_record(rg.name, "api_management_service.list_by_resource_group", exc))
-            log.warning("Failed to list API Management services in %s: %s", rg.name, exc)
-    return services, errors
+    return list(
+        utils.list_subscription_wide(client.api_management_service, "list", "list_by_subscription")
+    )
 
 
 def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
@@ -42,10 +31,11 @@ def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     if not utils.is_service_available_in_environment("apimanagement", environment):
         sys.exit(0)
 
-    services, errors = collect_services(subscription_id)
-    if not services and not errors:
+    services = collect_services(subscription_id)
+    if not services:
         raise utils.NoResourcesFound("API Management services")
 
+    errors: list = []
     rows = []
     for svc in services:
         sku = svc.sku

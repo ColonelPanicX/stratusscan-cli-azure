@@ -11,13 +11,24 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
 import advisor_export  # noqa: E402
+import api_management_export  # noqa: E402
 import app_service_export  # noqa: E402
 import application_gateway_export as agw_export  # noqa: E402
+import blob_containers_export  # noqa: E402
 import cosmos_db_export  # noqa: E402
+import event_hubs_export  # noqa: E402
+import file_shares_export  # noqa: E402
+import function_apps_export  # noqa: E402
+import key_vault_export  # noqa: E402
+import key_vault_objects_export  # noqa: E402
+import logic_apps_export  # noqa: E402
 import managed_disks_export  # noqa: E402
+import mysql_flexible_export  # noqa: E402
 import network_security_groups_export as nsg_export  # noqa: E402
+import postgresql_flexible_export  # noqa: E402
 import private_endpoints_export  # noqa: E402
 import public_ips_export  # noqa: E402
+import redis_cache_export  # noqa: E402
 import route_tables_export  # noqa: E402
 import snapshots_export  # noqa: E402
 import storage_accounts_export  # noqa: E402
@@ -1139,3 +1150,382 @@ def test_private_endpoint_connections_do_not_mutate_the_model():
     assert len(auto) == 1
     assert private_endpoints_export._target_resource(pe) == "c, d"
     assert private_endpoints_export._connection_status(pe) == "Approved, Pending"
+
+
+# --- SSAZR-119: throttling and call shapes ------------------------------------------
+
+_SCRIPTS = Path(__file__).parent.parent / "scripts"
+_SUB_ID = "00000000-0000-0000-0000-000000000001"
+_SA_ID = f"/subscriptions/{_SUB_ID}/resourceGroups/rg1/providers/Microsoft.Storage/storageAccounts/sa1"
+_KV_ID = f"/subscriptions/{_SUB_ID}/resourceGroups/rg1/providers/Microsoft.KeyVault/vaults/kv1"
+
+
+class _FakeResponse:
+    def __init__(self, status_code, headers=None, body='{"error": {"code": "Throttled", "message": "slow down"}}'):
+        self.status_code = status_code
+        self.reason = "Too Many Requests" if status_code == 429 else "Error"
+        self.headers = headers or {}
+        self.content_type = "application/json"
+        self.request = None
+        self._body = body
+
+    def text(self):
+        return self._body
+
+
+def _http_error(status_code, headers=None):
+    return HttpResponseError(response=_FakeResponse(status_code, headers))
+
+
+def _patch_export_io(monkeypatch, module, sheets_seen, tmp_path):
+    monkeypatch.setattr(module.utils, "detect_environment", lambda: "public")
+    monkeypatch.setattr(
+        module.utils, "create_export_filename", lambda *a: str(tmp_path / "out.xlsx")
+    )
+
+    def _save(df, filename, sheet_name="Sheet1", errors=None):
+        sheets_seen.append((sheet_name, df, list(errors or [])))
+
+    monkeypatch.setattr(module.utils, "save_dataframe_to_excel", _save)
+
+
+_SUBSCRIPTION_WIDE = [
+    (api_management_export, "collect_services", "api_management_service", "list"),
+    (event_hubs_export, "collect_namespaces", "namespaces", "list"),
+    (logic_apps_export, "collect_workflows", "workflows", "list_by_subscription"),
+    (mysql_flexible_export, "collect_servers", "servers", "list"),
+    (postgresql_flexible_export, "collect_servers", "servers", "list_by_subscription"),
+    (redis_cache_export, "collect_caches", "redis", "list_by_subscription"),
+]
+
+
+@pytest.mark.parametrize(
+    "module, collect, operation_group, method",
+    _SUBSCRIPTION_WIDE, ids=[m.__name__ for m, *_ in _SUBSCRIPTION_WIDE],
+)
+def test_subscription_wide_collect_uses_the_pinned_sdk_method(monkeypatch, module, collect, operation_group, method):
+    """The method name matching the pinned wheel is tried first and no resource-group client is built."""
+    item = SimpleNamespace(name="one")
+    ops = SimpleNamespace(**{
+        method: lambda: iter([item]),
+        "list_by_resource_group": lambda rg: pytest.fail("per-RG fallback must be gone"),
+    })
+    services_requested = []
+
+    def _client(service, sub_id=None):
+        services_requested.append(service)
+        return SimpleNamespace(**{operation_group: ops})
+
+    monkeypatch.setattr(module.utils, "get_azure_client", _client)
+    assert getattr(module, collect)(_SUB_ID) == [item]
+    assert "resource" not in services_requested
+
+
+@pytest.mark.parametrize("module", [m for m, *_ in _SUBSCRIPTION_WIDE], ids=[m.__name__ for m, *_ in _SUBSCRIPTION_WIDE])
+def test_subscription_wide_collect_fails_loudly_when_the_sdk_renames_the_method(monkeypatch, module):
+    monkeypatch.setattr(
+        module.utils, "get_azure_client",
+        lambda service, sub_id=None: SimpleNamespace(
+            api_management_service=SimpleNamespace(), namespaces=SimpleNamespace(),
+            workflows=SimpleNamespace(), servers=SimpleNamespace(), redis=SimpleNamespace(),
+        ),
+    )
+    collect = next(c for m, c, *_ in _SUBSCRIPTION_WIDE if m is module)
+    with pytest.raises(AttributeError):
+        getattr(module, collect)(_SUB_ID)
+
+
+@pytest.mark.parametrize(
+    "script",
+    ["api_management_export.py", "event_hubs_export.py", "logic_apps_export.py",
+     "mysql_flexible_export.py", "postgresql_flexible_export.py", "redis_cache_export.py"],
+)
+def test_subscription_wide_exporters_carry_no_resource_group_fallback(script):
+    source = (_SCRIPTS / script).read_text(encoding="utf-8")
+    assert "utils.list_subscription_wide(" in source
+    assert "list_by_resource_group" not in source
+    assert "resource_groups.list(" not in source
+    assert "hasattr(" not in source
+
+
+# --- SSAZR-119: Storage RP list throttling (blob containers / file shares) --------------
+
+
+class _FakeStorageClient:
+    def __init__(self, answers, accounts=("sa1",)):
+        self._answers = list(answers)
+        self.calls = []
+        self.storage_accounts = SimpleNamespace(
+            list=lambda: iter(SimpleNamespace(id=_SA_ID.replace("sa1", a), name=a) for a in accounts)
+        )
+        self.blob_containers = SimpleNamespace(list=self._list)
+        self.file_shares = SimpleNamespace(list=self._list)
+
+    def _list(self, rg, account):
+        self.calls.append((rg, account))
+        answer = self._answers.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return iter(answer)
+
+
+def _container(name="c1"):
+    return SimpleNamespace(
+        name=name, metadata=None, public_access=None, lease_state=None, has_immutability_policy=False,
+        has_legal_hold=False, default_encryption_scope="", last_modified_time=None,
+    )
+
+
+def _share(name="s1"):
+    return SimpleNamespace(
+        name=name, access_tier=None, share_quota=100, enabled_protocols=None, root_squash=None,
+        lease_state=None, lease_status=None,
+    )
+
+
+_STORAGE_EXPORTERS = [
+    (blob_containers_export, _container, "blob_containers.list"),
+    (file_shares_export, _share, "file_shares.list"),
+]
+
+
+def _run_storage(monkeypatch, tmp_path, module, client):
+    sheets = []
+    _patch_export_io(monkeypatch, module, sheets, tmp_path)
+    monkeypatch.setattr(module.utils, "get_azure_client", lambda service, sub_id=None: client)
+    monkeypatch.delenv(module.PACE_ENV, raising=False)
+    slept = []
+    monkeypatch.setattr(module.time, "sleep", slept.append)
+    result = module.main(_SUB_ID, "SUB")
+    return result, sheets, slept
+
+
+@pytest.mark.parametrize("module, item, operation", _STORAGE_EXPORTERS, ids=["blob", "files"])
+def test_storage_list_429_is_retried_once_after_retry_after(monkeypatch, tmp_path, module, item, operation):
+    client = _FakeStorageClient([_http_error(429, {"Retry-After": "7"}), [item()]])
+    result, sheets, slept = _run_storage(monkeypatch, tmp_path, module, client)
+    assert len(client.calls) == 2
+    assert slept == [7.0]
+    assert result.rows == 1
+    assert result.errors == []
+
+
+@pytest.mark.parametrize("module, item, operation", _STORAGE_EXPORTERS, ids=["blob", "files"])
+def test_storage_second_429_is_recorded_not_retried_again(monkeypatch, tmp_path, module, item, operation):
+    client = _FakeStorageClient([
+        _http_error(429, {"Retry-After": "3"}), _http_error(429, {"Retry-After": "3"}),
+    ])
+    result, sheets, slept = _run_storage(monkeypatch, tmp_path, module, client)
+    assert len(client.calls) == 2
+    assert slept == [3.0]
+    assert result.rows == 0
+    assert [e["Operation"] for e in result.errors] == [operation]
+    assert result.errors[0]["Scope"] == "sa1"
+
+
+@pytest.mark.parametrize("module, item, operation", _STORAGE_EXPORTERS, ids=["blob", "files"])
+def test_storage_429_without_retry_after_is_recorded_without_a_retry(monkeypatch, tmp_path, module, item, operation):
+    client = _FakeStorageClient([_http_error(429)])
+    result, sheets, slept = _run_storage(monkeypatch, tmp_path, module, client)
+    assert len(client.calls) == 1
+    assert slept == []
+    assert [e["Operation"] for e in result.errors] == [operation]
+
+
+@pytest.mark.parametrize("module, item, operation", _STORAGE_EXPORTERS, ids=["blob", "files"])
+def test_storage_non_429_failure_is_recorded_and_isolated(monkeypatch, tmp_path, module, item, operation):
+    client = _FakeStorageClient([_http_error(403), [item("kept")]], accounts=("sa1", "sa2"))
+    result, sheets, slept = _run_storage(monkeypatch, tmp_path, module, client)
+    assert slept == []
+    assert result.rows == 1
+    assert [e["Scope"] for e in result.errors] == ["sa1"]
+
+
+@pytest.mark.parametrize("module, item, operation", _STORAGE_EXPORTERS, ids=["blob", "files"])
+def test_storage_pacing_env_spaces_the_per_account_calls(monkeypatch, tmp_path, module, item, operation):
+    client = _FakeStorageClient([[item()], [item()], [item()]], accounts=("sa1", "sa2", "sa3"))
+    sheets = []
+    _patch_export_io(monkeypatch, module, sheets, tmp_path)
+    monkeypatch.setattr(module.utils, "get_azure_client", lambda service, sub_id=None: client)
+    monkeypatch.setenv(module.PACE_ENV, "0.25")
+    slept = []
+    monkeypatch.setattr(module.time, "sleep", slept.append)
+    result = module.main(_SUB_ID, "SUB")
+    assert result.rows == 3
+    assert slept == [0.25, 0.25]
+
+
+@pytest.mark.parametrize("module", [m for m, *_ in _STORAGE_EXPORTERS], ids=["blob", "files"])
+def test_storage_pacing_env_defaults_to_zero_and_rejects_garbage(monkeypatch, module):
+    monkeypatch.delenv(module.PACE_ENV, raising=False)
+    assert module.list_pace_seconds() == 0.0
+    monkeypatch.setenv(module.PACE_ENV, "-4")
+    assert module.list_pace_seconds() == 0.0
+    monkeypatch.setenv(module.PACE_ENV, "soon")
+    with pytest.raises(ValueError):
+        module.list_pace_seconds()
+
+
+def test_file_shares_unsupported_account_is_still_skipped_after_throttle_handling(monkeypatch, tmp_path):
+    unsupported = HttpResponseError(response=_FakeResponse(
+        400, body='{"error": {"code": "FeatureNotSupportedForAccount", "message": "no files"}}'
+    ))
+    client = _FakeStorageClient([unsupported, [_share()]], accounts=("sa1", "sa2"))
+    result, sheets, slept = _run_storage(monkeypatch, tmp_path, file_shares_export, client)
+    assert result.rows == 1
+    assert result.errors == []
+
+
+# --- SSAZR-119: Key Vault listing without per-vault get -----------------------------------
+
+
+def _vault(name="kv1"):
+    return SimpleNamespace(
+        id=_KV_ID, name=name, location="eastus", tags={"env": "prod"},
+        properties=SimpleNamespace(
+            sku=SimpleNamespace(name="standard"), enable_soft_delete=True, soft_delete_retention_in_days=90,
+            enable_purge_protection=True, enable_rbac_authorization=True, public_network_access="Enabled",
+            vault_uri="https://kv1.vault.azure.net/",
+        ),
+    )
+
+
+def _fake_keyvault_client(vaults):
+    return SimpleNamespace(vaults=SimpleNamespace(
+        list_by_subscription=lambda: iter(vaults),
+        list=lambda: pytest.fail("vaults.list returns bare TrackedResource; must not be used"),
+        get=lambda rg, name: pytest.fail("per-vault get must not be called"),
+    ))
+
+
+def test_key_vault_export_reads_properties_from_list_by_subscription(monkeypatch, tmp_path):
+    sheets = []
+    _patch_export_io(monkeypatch, key_vault_export, sheets, tmp_path)
+    monkeypatch.setattr(key_vault_export.utils, "get_azure_client", lambda s, sub_id=None: _fake_keyvault_client([_vault()]))
+    result = key_vault_export.main(_SUB_ID, "SUB")
+    assert result.rows == 1 and result.errors == []
+    (_, df, _) = sheets[0]
+    row = df.iloc[0].to_dict()
+    assert row["Resource Group"] == "rg1"
+    assert row["SKU"] == "standard"
+    assert row["Vault URI"] == "https://kv1.vault.azure.net/"
+    assert list(df.columns) == [
+        "Name", "Resource Group", "Location", "SKU", "Soft Delete Enabled", "Soft Delete Retention Days",
+        "Purge Protection Enabled", "RBAC Authorization", "Public Network Access", "Vault URI", "Tags",
+    ]
+
+
+def test_key_vault_objects_collects_uris_from_list_by_subscription(monkeypatch):
+    no_uri = _vault("kv2")
+    no_uri.properties = SimpleNamespace(vault_uri=None)
+    monkeypatch.setattr(
+        key_vault_objects_export.utils, "get_azure_client",
+        lambda s, sub_id=None: _fake_keyvault_client([_vault(), no_uri]),
+    )
+    uris, errors = key_vault_objects_export.collect_vault_uris(_SUB_ID)
+    assert uris == [("kv1", "https://kv1.vault.azure.net/")]
+    assert errors == []
+
+
+def test_key_vault_exporters_never_call_vaults_get():
+    for script in ("key_vault_export.py", "key_vault_objects_export.py"):
+        source = (_SCRIPTS / script).read_text(encoding="utf-8")
+        assert "vaults.list_by_subscription()" in source
+        assert "vaults.get(" not in source
+        assert "vaults.list()" not in source
+
+
+# --- SSAZR-119 / C-14: App Service site configuration behind an explicit switch ------
+
+
+def _site(name="app1", kind="app"):
+    return SimpleNamespace(
+        name=name, id=f"/subscriptions/{_SUB_ID}/resourceGroups/rg1/providers/Microsoft.Web/sites/{name}",
+        resource_group="rg1", location="eastus", kind=kind, state="Running", https_only=True,
+        default_host_name=f"{name}.azurewebsites.net", server_farm_id="/x/y/plan1", site_config=None,
+        outbound_ip_addresses="1.2.3.4", tags=None, public_network_access="Enabled",
+    )
+
+
+def _site_config():
+    return SimpleNamespace(
+        linux_fx_version="PYTHON|3.12", windows_fx_version=None, net_framework_version="v4.0",
+        node_version=None, python_version=None, php_version=None, java_version=None,
+        min_tls_version="1.2", ftps_state="Disabled",
+    )
+
+
+class _FakeWebClient:
+    def __init__(self, sites, config=None):
+        self.config_calls = []
+        self._config = config
+        self.web_apps = SimpleNamespace(list=lambda: iter(sites), get_configuration=self._get_configuration)
+
+    def _get_configuration(self, rg, name):
+        self.config_calls.append((rg, name))
+        if isinstance(self._config, Exception):
+            raise self._config
+        return self._config
+
+
+_APP_EXPORTERS = [
+    (app_service_export, "app", "collect_web_apps"),
+    (function_apps_export, "functionapp,linux", "collect_function_apps"),
+]
+
+
+@pytest.mark.parametrize("module, kind, collect", _APP_EXPORTERS, ids=["app-service", "function-apps"])
+def test_app_config_lookup_is_off_by_default(monkeypatch, module, kind, collect):
+    monkeypatch.delenv(module.CONFIG_ENV, raising=False)
+    client = _FakeWebClient([_site(kind=kind)], _site_config())
+    errors = []
+    rows = module.build_rows(client, getattr(module, collect)(client), errors)
+    assert client.config_calls == []
+    assert rows[0]["Runtime Stack"] == ""
+    assert rows[0]["Min TLS Version"] == ""
+    assert errors == []
+
+
+@pytest.mark.parametrize("module, kind, collect", _APP_EXPORTERS, ids=["app-service", "function-apps"])
+def test_app_config_lookup_fills_runtime_columns_when_enabled(monkeypatch, module, kind, collect):
+    monkeypatch.setenv(module.CONFIG_ENV, "1")
+    client = _FakeWebClient([_site(kind=kind)], _site_config())
+    errors = []
+    rows = module.build_rows(client, getattr(module, collect)(client), errors)
+    assert client.config_calls == [("rg1", "app1")]
+    assert rows[0]["Runtime Stack"] == "PYTHON|3.12"
+    assert rows[0][".NET Version"] == "v4.0"
+    assert rows[0]["Min TLS Version"] == "1.2"
+    assert rows[0]["FTPS State"] == "Disabled"
+    assert errors == []
+
+
+@pytest.mark.parametrize("module, kind, collect", _APP_EXPORTERS, ids=["app-service", "function-apps"])
+def test_app_config_lookup_failure_is_recorded_per_app(monkeypatch, module, kind, collect):
+    monkeypatch.setenv(module.CONFIG_ENV, "1")
+    client = _FakeWebClient([_site(kind=kind)], _http_error(403))
+    errors = []
+    rows = module.build_rows(client, getattr(module, collect)(client), errors)
+    assert rows[0]["Runtime Stack"] == ""
+    assert [e["Operation"] for e in errors] == ["web_apps.get_configuration"]
+    assert errors[0]["Scope"] == "app1"
+
+
+@pytest.mark.parametrize("value", ["", "0", "true", "yes"])
+def test_app_config_switch_accepts_only_the_literal_1(monkeypatch, value):
+    monkeypatch.setenv(app_service_export.CONFIG_ENV, value)
+    assert app_service_export.config_lookup_enabled() is False
+    monkeypatch.setenv(app_service_export.CONFIG_ENV, " 1 ")
+    assert app_service_export.config_lookup_enabled() is True
+
+
+def test_app_service_main_goes_partial_when_a_config_read_fails(monkeypatch, tmp_path):
+    monkeypatch.setenv(app_service_export.CONFIG_ENV, "1")
+    sheets = []
+    _patch_export_io(monkeypatch, app_service_export, sheets, tmp_path)
+    client = _FakeWebClient([_site(), _site("fn1", "functionapp")], _http_error(429))
+    monkeypatch.setattr(app_service_export.utils, "get_azure_client", lambda s, sub_id=None: client)
+    result = app_service_export.main(_SUB_ID, "SUB")
+    assert result.rows == 1
+    assert len(result.errors) == 1
+    assert sheets[0][2] == result.errors

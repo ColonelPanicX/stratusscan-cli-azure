@@ -1,8 +1,20 @@
 #!/usr/bin/env python3
-"""StratusScanCLI-Azure — File Shares Inventory Export"""
+"""StratusScanCLI-Azure — File Shares Inventory Export
 
+One file_shares.list call per storage account. The Storage resource provider
+allows 100 list operations per 5 minutes per subscription per region, so a
+subscription with many accounts in one region can be throttled mid-run. A 429 is
+retried once after the Retry-After the service asks for; a second 429, or a 429
+without Retry-After, is recorded for that account (PARTIAL) rather than dropped.
+STRATUSSCAN_STORAGE_LIST_PACE_S (seconds, default 0) spaces the per-account calls.
+"""
+
+import os
 import sys
+import time
+from functools import partial
 from pathlib import Path
+from typing import Any, Callable, Optional
 
 try:
     import utils
@@ -17,6 +29,43 @@ utils.setup_logging("file-shares-export")
 utils.log_script_start("file_shares_export.py", "File Shares Inventory Export")
 
 log = utils.get_logger()
+
+PACE_ENV = "STRATUSSCAN_STORAGE_LIST_PACE_S"
+
+
+def list_pace_seconds() -> float:
+    raw = os.environ.get(PACE_ENV, "").strip()
+    if not raw:
+        return 0.0
+    try:
+        pace = float(raw)
+    except ValueError as exc:
+        raise ValueError(f"{PACE_ENV} must be a number of seconds, got {raw!r}") from exc
+    return max(pace, 0.0)
+
+
+def retry_after_seconds(exc: HttpResponseError) -> Optional[float]:
+    headers = getattr(getattr(exc, "response", None), "headers", None) or {}
+    for key, value in headers.items():
+        if str(key).lower() == "retry-after":
+            try:
+                return max(float(value), 0.0)
+            except ValueError:
+                return None
+    return None
+
+
+def list_once_with_throttle_retry(list_call: Callable[[], Any], account: str) -> list:
+    """Materialize a per-account listing; on a 429 wait Retry-After once and retry once."""
+    try:
+        return list(list_call())
+    except HttpResponseError as exc:
+        delay = retry_after_seconds(exc) if exc.status_code == 429 else None
+        if delay is None:
+            raise
+        log.warning("Storage RP throttled account %s (429); retrying once after %.0fs", account, delay)
+        time.sleep(delay)
+        return list(list_call())
 
 
 def _iter_accounts(client):
@@ -45,14 +94,18 @@ def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
 
     client = utils.get_azure_client("storage", subscription_id)
     log.info("Listing file shares across storage accounts in %s", subscription_id)
+    pace = list_pace_seconds()
 
     rows = []
     errors: list = []
     unsupported_accounts = 0
-    for rg, account in _iter_accounts(client):
+    for index, (rg, account) in enumerate(_iter_accounts(client)):
+        if pace and index:
+            time.sleep(pace)
         try:
-            for share in client.file_shares.list(rg, account):
-                rows.append(_build_row(share, account, rg))
+            shares = list_once_with_throttle_retry(
+                partial(client.file_shares.list, rg, account), account
+            )
         except HttpResponseError as e:
             if utils.error_code(e) == "FeatureNotSupportedForAccount":
                 unsupported_accounts += 1
@@ -60,6 +113,9 @@ def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
                 continue
             errors.append(utils.error_record(account, "file_shares.list", e))
             log.warning("Failed to list file shares for account %s: %s", account, e)
+            continue
+        for share in shares:
+            rows.append(_build_row(share, account, rg))
 
     if unsupported_accounts:
         print(f"Skipped {unsupported_accounts} account(s) that do not support Azure Files.")

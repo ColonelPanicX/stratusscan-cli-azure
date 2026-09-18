@@ -1,6 +1,7 @@
 """Governance / security exporter tests (SSAZR-115 slice 2) — fake SDK models, no live Azure."""
 
 import datetime
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,7 +12,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
 import action_groups_export  # noqa: E402
 import azure_sql_export  # noqa: E402
+import cost_management_export  # noqa: E402
 import defender_assessments_export  # noqa: E402
+import diagnostic_settings_export  # noqa: E402
 import log_analytics_export  # noqa: E402
 import management_groups_export  # noqa: E402
 import metric_alerts_export  # noqa: E402
@@ -882,3 +885,455 @@ def test_policy_compliance_row_against_real_sdk_model():
     assert row["Definition Group Names"] == "g1, g2"
     assert row["Assignment Scope"] == _SUB
     assert row["Timestamp"].startswith("2026-01-02 03:04:05")
+
+
+# --- SSAZR-119: policy compliance — server-side filter + summarize -------------------
+
+_SUB_ID = _SUB.split("/")[-1]
+_ASSIGNMENT_ID = f"{_SUB}/providers/Microsoft.Authorization/policyAssignments/nist-assign"
+_SET_ID = "/providers/Microsoft.Authorization/policySetDefinitions/nist-800-53"
+_DEF_ID = "/providers/Microsoft.Authorization/policyDefinitions/def-1"
+
+
+class _FakePolicyStates:
+    def __init__(self, states=(), summary=None):
+        self.states = list(states)
+        self.summary = summary
+        self.list_calls = []
+        self.summarize_calls = []
+
+    def list_query_results_for_subscription(self, policy_states_resource, subscription_id, query_options=None):
+        self.list_calls.append((policy_states_resource, subscription_id, query_options))
+        return iter(self.states)
+
+    def summarize_for_subscription(self, policy_states_summary_resource, subscription_id, query_options=None):
+        self.summarize_calls.append((policy_states_summary_resource, subscription_id))
+        return self.summary
+
+
+def _summary_model():
+    models = pytest.importorskip("azure.mgmt.policyinsights.models")
+    return models.SummarizeResults.deserialize({
+        "@odata.count": 1,
+        "value": [{
+            "results": {"nonCompliantResources": 3, "nonCompliantPolicies": 2},
+            "policyAssignments": [{
+                "policyAssignmentId": _ASSIGNMENT_ID,
+                "policySetDefinitionId": _SET_ID,
+                "results": {"nonCompliantResources": 3, "nonCompliantPolicies": 2},
+                "policyDefinitions": [{
+                    "policyDefinitionId": _DEF_ID,
+                    "policyDefinitionReferenceId": "ref-1",
+                    "effect": "audit",
+                    "results": {"nonCompliantResources": 3},
+                }],
+            }],
+        }],
+    })
+
+
+def test_policy_states_are_filtered_server_side_to_non_compliant(monkeypatch):
+    fake = _FakePolicyStates(states=[SimpleNamespace(resource_id=_VM_ID, compliance_state="NonCompliant")])
+    _patch_client(monkeypatch, policy_compliance_export, SimpleNamespace(policy_states=fake))
+    states = policy_compliance_export.collect_states(_SUB_ID)
+    assert len(states) == 1
+    (resource, sub, options) = fake.list_calls[0]
+    assert (resource, sub) == ("latest", _SUB_ID)
+    assert options.filter == "complianceState eq 'NonCompliant'"
+    assert type(options).__name__ == "QueryOptions"
+
+
+def test_policy_summary_rows_flatten_the_summarize_result():
+    rows = policy_compliance_export._summary_rows(_summary_model())
+    assert [r["Level"] for r in rows] == ["Subscription", "Assignment", "Definition"]
+    assert rows[0]["Non-Compliant Resources"] == 3 and rows[0]["Non-Compliant Policies"] == 2
+    assert rows[1]["Policy Assignment"] == "nist-assign"
+    assert rows[1]["Policy Set Definition"] == "nist-800-53"
+    assert rows[2]["Policy Definition"] == "def-1"
+    assert rows[2]["Definition Reference ID"] == "ref-1"
+    assert rows[2]["Effect"] == "audit"
+    assert rows[2]["Non-Compliant Resources"] == 3
+    assert set(rows[0]) == set(policy_compliance_export.SUMMARY_COLUMNS)
+
+
+def test_policy_summary_rows_empty_when_service_returns_nothing():
+    assert policy_compliance_export._summary_rows(SimpleNamespace(value=None)) == []
+    assert policy_compliance_export._summary_rows(None) == []
+
+
+def test_policy_compliance_fully_compliant_subscription_still_writes_the_summary(monkeypatch, tmp_path):
+    fake = _FakePolicyStates(states=[], summary=_summary_model())
+    _patch_client(monkeypatch, policy_compliance_export, SimpleNamespace(policy_states=fake))
+    monkeypatch.setattr(policy_compliance_export.utils, "detect_environment", lambda: "public")
+    monkeypatch.setattr(policy_compliance_export.utils, "create_export_filename", lambda *a: str(tmp_path / "o.xlsx"))
+    written = {}
+    monkeypatch.setattr(
+        policy_compliance_export.utils, "save_multiple_dataframes_to_excel",
+        lambda sheets, filename, errors=None: written.update(sheets),
+    )
+    result = policy_compliance_export.main(_SUB_ID, "SUB")
+    assert result.rows == 0
+    assert list(written) == ["Compliance Summary", "Compliance Detail"]
+    assert list(written["Compliance Summary"].columns) == policy_compliance_export.SUMMARY_COLUMNS
+    assert fake.summarize_calls == [("latest", _SUB_ID)]
+
+
+def test_policy_compliance_no_states_and_no_summary_is_empty(monkeypatch):
+    fake = _FakePolicyStates(states=[], summary=SimpleNamespace(value=[]))
+    _patch_client(monkeypatch, policy_compliance_export, SimpleNamespace(policy_states=fake))
+    monkeypatch.setattr(policy_compliance_export.utils, "detect_environment", lambda: "public")
+    with pytest.raises(policy_compliance_export.utils.NoResourcesFound):
+        policy_compliance_export.main(_SUB_ID, "SUB")
+
+
+def test_policy_compliance_detail_columns_unchanged():
+    row = policy_compliance_export._build_detail_row(SimpleNamespace(resource_id=_VM_ID))
+    assert list(row) == [
+        "Resource", "Resource Type", "Resource Group", "Location", "Compliance State", "Policy Assignment",
+        "Policy Definition", "Definition Action", "Definition Category", "Timestamp", "Policy Set Definition",
+        "Definition Reference ID", "Definition Group Names", "Assignment Scope",
+    ]
+
+
+# --- SSAZR-119: Cost Management — nextLink, 204, QPU 429 ------------------------------
+
+
+class _CostResponse:
+    def __init__(self, status_code, payload=None, headers=None):
+        self.status_code = status_code
+        self.reason = "OK" if status_code == 200 else "Too Many Requests"
+        self.headers = headers or {}
+        self.content_type = "application/json"
+        self.request = None
+        self._payload = payload
+
+    def json(self):
+        return self._payload
+
+    def text(self):
+        return json.dumps(self._payload or {"error": {"code": "429", "message": "throttled"}})
+
+
+def _cost_429(**headers):
+    from azure.core.exceptions import HttpResponseError
+
+    return HttpResponseError(response=_CostResponse(429, headers=headers))
+
+
+def _query_result(rows, next_link=None):
+    return SimpleNamespace(
+        columns=[SimpleNamespace(name="PreTaxCost"), SimpleNamespace(name="ResourceGroup"),
+                 SimpleNamespace(name="ServiceName"), SimpleNamespace(name="Currency")],
+        rows=rows, next_link=next_link,
+    )
+
+
+class _FakeCostClient:
+    def __init__(self, first, pages=()):
+        self._first = list(first) if isinstance(first, list) else [first]
+        self._pages = list(pages)
+        self.usage_calls = []
+        self.requests = []
+        self.query = SimpleNamespace(usage=self._usage)
+
+    def _usage(self, scope, parameters):
+        self.usage_calls.append((scope, parameters))
+        answer = self._first.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    def send_request(self, request, **kwargs):
+        self.requests.append(request)
+        answer = self._pages.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+
+def _run_cost(monkeypatch, client):
+    _patch_client(monkeypatch, cost_management_export, client)
+    slept = []
+    monkeypatch.setattr(cost_management_export.time, "sleep", slept.append)
+    errors = []
+    rows = cost_management_export.collect_costs(_SUB_ID, errors)
+    return rows, errors, slept
+
+
+def test_cost_query_body_uses_documented_column_and_dimension_names():
+    dataset = cost_management_export._QUERY["dataset"]
+    assert dataset["aggregation"] == {"totalCost": {"name": "PreTaxCost", "function": "Sum"}}
+    assert [g["name"] for g in dataset["grouping"]] == ["ResourceGroup", "ServiceName"]
+    assert cost_management_export._QUERY["timeframe"] == "MonthToDate"
+
+
+def test_cost_single_page_rows_carry_currency_scope_and_timeframe(monkeypatch):
+    client = _FakeCostClient(_query_result([[1.5, "rg1", "Storage", "USD"]]))
+    rows, errors, slept = _run_cost(monkeypatch, client)
+    assert rows == [{
+        "PreTaxCost": 1.5, "ResourceGroup": "rg1", "ServiceName": "Storage", "Currency": "USD",
+        "Scope": f"/subscriptions/{_SUB_ID}", "Timeframe": "MonthToDate",
+    }]
+    assert errors == [] and slept == []
+    assert client.usage_calls[0][0] == f"/subscriptions/{_SUB_ID}"
+
+
+def test_cost_next_link_is_re_posted_with_the_same_body_until_exhausted(monkeypatch):
+    pytest.importorskip("azure.mgmt.costmanagement.models")
+    page2 = {"properties": {
+        "columns": [{"name": "PreTaxCost", "type": "Number"}, {"name": "ResourceGroup", "type": "String"},
+                    {"name": "ServiceName", "type": "String"}, {"name": "Currency", "type": "String"}],
+        "rows": [[2.0, "rg2", "Compute", "USD"]],
+        "nextLink": "https://management.azure.com/next3",
+    }}
+    page3 = {"properties": {"columns": [{"name": "PreTaxCost", "type": "Number"}], "rows": [[3.0]], "nextLink": None}}
+    client = _FakeCostClient(
+        _query_result([[1.0, "rg1", "Storage", "USD"]], next_link="https://management.azure.com/next2"),
+        pages=[_CostResponse(200, page2), _CostResponse(200, page3)],
+    )
+    rows, errors, slept = _run_cost(monkeypatch, client)
+    assert [r["PreTaxCost"] for r in rows] == [1.0, 2.0, 3.0]
+    assert rows[2]["Currency"] == ""
+    assert errors == []
+    assert [r.url for r in client.requests] == ["https://management.azure.com/next2", "https://management.azure.com/next3"]
+    assert all(r.method == "POST" for r in client.requests)
+    assert json.loads(client.requests[0].content) == cost_management_export._QUERY
+
+
+def test_cost_204_on_first_page_means_no_rows(monkeypatch):
+    client = _FakeCostClient(None)
+    rows, errors, slept = _run_cost(monkeypatch, client)
+    assert rows == [] and errors == []
+    _patch_client(monkeypatch, cost_management_export, _FakeCostClient(None))
+    monkeypatch.setattr(cost_management_export.utils, "detect_environment", lambda: "public")
+    with pytest.raises(cost_management_export.utils.NoResourcesFound):
+        cost_management_export.main(_SUB_ID, "SUB")
+
+
+def test_cost_204_on_a_later_page_ends_paging_cleanly(monkeypatch):
+    client = _FakeCostClient(
+        _query_result([[1.0, "rg1", "Storage", "USD"]], next_link="https://management.azure.com/next2"),
+        pages=[_CostResponse(204)],
+    )
+    rows, errors, slept = _run_cost(monkeypatch, client)
+    assert len(rows) == 1 and errors == []
+
+
+def test_cost_429_with_qpu_header_is_retried_after_that_many_seconds(monkeypatch):
+    client = _FakeCostClient([
+        _cost_429(**{"x-ms-ratelimit-microsoft.costmanagement-qpu-retry-after": "12"}),
+        _query_result([[1.0, "rg1", "Storage", "USD"]]),
+    ])
+    rows, errors, slept = _run_cost(monkeypatch, client)
+    assert len(rows) == 1
+    assert slept == [12.0]
+    assert len(client.usage_calls) == 2
+
+
+def test_cost_429_without_any_header_waits_the_documented_ten_second_window(monkeypatch):
+    client = _FakeCostClient([_cost_429(), _query_result([[1.0, "rg1", "Storage", "USD"]])])
+    rows, errors, slept = _run_cost(monkeypatch, client)
+    assert slept == [cost_management_export.DEFAULT_THROTTLE_PAUSE_S] == [10.0]
+
+
+def test_cost_429_with_standard_retry_after_is_not_retried_again_here(monkeypatch):
+    """azure-core already retried a Retry-After 429; stacking another loop on top is what we avoid."""
+    from azure.core.exceptions import HttpResponseError
+
+    client = _FakeCostClient([_cost_429(**{"Retry-After": "5"})])
+    _patch_client(monkeypatch, cost_management_export, client)
+    monkeypatch.setattr(cost_management_export.time, "sleep", lambda s: pytest.fail("must not sleep"))
+    with pytest.raises(HttpResponseError):
+        cost_management_export.collect_costs(_SUB_ID, [])
+    assert len(client.usage_calls) == 1
+
+
+def test_cost_429_is_bounded_to_three_attempts(monkeypatch):
+    from azure.core.exceptions import HttpResponseError
+
+    client = _FakeCostClient([_cost_429(), _cost_429(), _cost_429(), _query_result([[9.0, "", "", ""]])])
+    _patch_client(monkeypatch, cost_management_export, client)
+    slept = []
+    monkeypatch.setattr(cost_management_export.time, "sleep", slept.append)
+    with pytest.raises(HttpResponseError):
+        cost_management_export.collect_costs(_SUB_ID, [])
+    assert len(client.usage_calls) == cost_management_export.MAX_ATTEMPTS == 3
+    assert len(slept) == 2
+
+
+def test_cost_non_429_failure_on_first_page_propagates(monkeypatch):
+    from azure.core.exceptions import HttpResponseError
+
+    client = _FakeCostClient([HttpResponseError(response=_CostResponse(403))])
+    _patch_client(monkeypatch, cost_management_export, client)
+    with pytest.raises(HttpResponseError):
+        cost_management_export.collect_costs(_SUB_ID, [])
+
+
+def test_cost_later_page_failure_is_recorded_and_keeps_earlier_rows(monkeypatch):
+    client = _FakeCostClient(
+        _query_result([[1.0, "rg1", "Storage", "USD"]], next_link="https://management.azure.com/next2"),
+        pages=[_CostResponse(403, {"error": {"code": "AuthorizationFailed", "message": "nope"}})],
+    )
+    rows, errors, slept = _run_cost(monkeypatch, client)
+    assert len(rows) == 1
+    assert [e["Operation"] for e in errors] == ["query.usage(nextLink)"]
+    assert errors[0]["Error Code"] == "AuthorizationFailed"
+    assert "page 2" in errors[0]["Scope"]
+
+
+def test_cost_throttle_delay_reads_headers_case_insensitively():
+    assert cost_management_export.throttle_delay(
+        _cost_429(**{"X-MS-RateLimit-Microsoft.CostManagement-QPU-Retry-After": "3"})
+    ) == 3.0
+    assert cost_management_export.throttle_delay(_cost_429(**{"RETRY-AFTER": "3"})) is None
+    from azure.core.exceptions import HttpResponseError
+
+    assert cost_management_export.throttle_delay(HttpResponseError(response=_CostResponse(503))) is None
+
+
+# --- SSAZR-119: diagnostic settings — memoized unsupported types, 403/429, activity log ---
+
+
+def _resource(name, resource_type):
+    return SimpleNamespace(
+        id=f"{_SUB}/resourceGroups/rg1/providers/{resource_type}/{name}", name=name, type=resource_type,
+    )
+
+
+class _FakeMonitor:
+    def __init__(self, per_resource, activity=()):
+        self._per_resource = per_resource
+        self.calls = []
+        self.diagnostic_settings = SimpleNamespace(list=self._list)
+        self._activity = activity
+        self.subscription_diagnostic_settings = SimpleNamespace(list=self._list_activity)
+
+    def _list(self, resource_uri):
+        self.calls.append(resource_uri)
+        answer = self._per_resource(resource_uri)
+        if isinstance(answer, Exception):
+            raise answer
+        return iter(answer)
+
+    def _list_activity(self):
+        if isinstance(self._activity, Exception):
+            raise self._activity
+        return iter(self._activity)
+
+
+def _diag_error(code, status):
+    from azure.core.exceptions import HttpResponseError
+
+    return HttpResponseError(response=_CostResponse(status, {"error": {"code": code, "message": "m"}}))
+
+
+def _setting(name="ds1", category="Administrative", workspace="/w/ws1"):
+    return SimpleNamespace(
+        name=name, logs=[SimpleNamespace(category=category, category_group=None, enabled=True, retention_policy=None)],
+        metrics=[], workspace_id=workspace, storage_account_id=None, event_hub_authorization_rule_id=None,
+        event_hub_name=None, marketplace_partner_id=None,
+    )
+
+
+def test_diagnostic_unsupported_type_is_memoized_after_the_first_answer():
+    resources = [
+        _resource("a1", "Microsoft.Foo/bars"), _resource("a2", "Microsoft.Foo/bars"),
+        _resource("a3", "microsoft.foo/bars"), _resource("b1", "Microsoft.Storage/storageAccounts"),
+    ]
+    monitor = _FakeMonitor(
+        lambda uri: _diag_error("ResourceTypeNotSupported", 400) if "Foo/bars" in uri or "foo/bars" in uri else [_setting()]
+    )
+    errors = []
+    summary, detail = diagnostic_settings_export.audit_resources(monitor, resources, errors)
+    assert [row["Has Diagnostics"] for row in summary] == ["Unsupported", "Unsupported (type)", "Unsupported (type)", "Yes"]
+    assert len(monitor.calls) == 2
+    assert errors == []
+    assert len(detail) == 1 and detail[0]["Destination"] == "LogAnalytics:ws1"
+
+
+def test_diagnostic_403_and_429_are_classified_and_recorded():
+    resources = [_resource("f", "Microsoft.A/x"), _resource("t", "Microsoft.B/y"), _resource("e", "Microsoft.C/z")]
+
+    def answer(uri):
+        if "/x/" in uri:
+            return _diag_error("AuthorizationFailed", 403)
+        if "/y/" in uri:
+            return _diag_error("TooManyRequests", 429)
+        return _diag_error("InternalServerError", 500)
+
+    errors = []
+    summary, _ = diagnostic_settings_export.audit_resources(_FakeMonitor(answer), resources, errors)
+    assert [row["Has Diagnostics"] for row in summary] == [
+        "Forbidden (AuthorizationFailed)", "Throttled (TooManyRequests)", "Error (InternalServerError)",
+    ]
+    assert [e["Operation"] for e in errors] == ["diagnostic_settings.list"] * 3
+    assert [e["Error Code"] for e in errors] == ["AuthorizationFailed", "TooManyRequests", "InternalServerError"]
+
+
+def test_diagnostic_progress_line_every_fifty_resources(capsys):
+    resources = [_resource(f"r{i}", "Microsoft.Storage/storageAccounts") for i in range(120)]
+    diagnostic_settings_export.audit_resources(_FakeMonitor(lambda uri: []), resources, [])
+    out = capsys.readouterr().out
+    assert out.count("audited ") == 3
+    assert "audited 50/120 resources" in out and "audited 100/120 resources" in out and "audited 120/120 resources" in out
+
+
+def test_diagnostic_activity_log_rows_read_subscription_settings():
+    monitor = _FakeMonitor(lambda uri: [], activity=[_setting("act", "Security", "/w/ws9")])
+    errors = []
+    rows = diagnostic_settings_export.collect_activity_log_settings(monitor, _SUB_ID, errors)
+    assert rows == [{
+        "Setting Name": "act", "Log Categories": "Security", "Destination": "LogAnalytics:ws9",
+        "Workspace ID": "/w/ws9", "Storage Account ID": "", "Event Hub Authorization Rule ID": "",
+        "Marketplace Partner ID": "",
+    }]
+    assert errors == []
+
+
+def test_diagnostic_activity_log_failure_is_recorded_not_empty():
+    monitor = _FakeMonitor(lambda uri: [], activity=_diag_error("AuthorizationFailed", 403))
+    errors = []
+    assert diagnostic_settings_export.collect_activity_log_settings(monitor, _SUB_ID, errors) == []
+    assert [e["Operation"] for e in errors] == ["subscription_diagnostic_settings.list"]
+    assert errors[0]["Scope"] == _SUB_ID
+
+
+def test_diagnostic_main_always_writes_the_activity_log_sheet(monkeypatch, tmp_path):
+    monitor = _FakeMonitor(lambda uri: [], activity=[])
+    resource_client = SimpleNamespace(resources=SimpleNamespace(
+        list=lambda: iter([_resource("sa", "Microsoft.Storage/storageAccounts")])
+    ))
+    monkeypatch.setattr(
+        diagnostic_settings_export.utils, "get_azure_client",
+        lambda service, sub_id=None: resource_client if service == "resource" else monitor,
+    )
+    monkeypatch.setattr(diagnostic_settings_export.utils, "detect_environment", lambda: "public")
+    monkeypatch.setattr(diagnostic_settings_export.utils, "create_export_filename", lambda *a: str(tmp_path / "d.xlsx"))
+    written = {}
+
+    def _save(sheets, filename, errors=None):
+        written["sheets"] = sheets
+        written["errors"] = list(errors or [])
+
+    monkeypatch.setattr(diagnostic_settings_export.utils, "save_multiple_dataframes_to_excel", _save)
+    result = diagnostic_settings_export.main(_SUB_ID, "SUB")
+    assert list(written["sheets"]) == ["Summary", "Activity Log"]
+    assert list(written["sheets"]["Activity Log"].columns) == diagnostic_settings_export.ACTIVITY_LOG_COLUMNS
+    assert result.rows == 1 and result.errors == []
+
+
+def test_diagnostic_activity_log_rows_against_real_sdk_model():
+    models = pytest.importorskip("azure.mgmt.monitor.v2021_05_01_preview.models")
+    setting = models.SubscriptionDiagnosticSettingsResource.deserialize({
+        "id": f"{_SUB}/providers/microsoft.insights/diagnosticSettings/ds4", "name": "ds4",
+        "properties": {
+            "storageAccountId": f"{_SUB}/resourceGroups/rg/providers/Microsoft.Storage/storageAccounts/st1",
+            "workspaceId": f"{_SUB}/resourceGroups/rg/providers/Microsoft.OperationalInsights/workspaces/law1",
+            "logs": [{"categoryGroup": "allLogs", "enabled": True}, {"category": "Alert", "enabled": False}],
+        },
+    })
+    row = diagnostic_settings_export._activity_log_row(setting)
+    assert row["Setting Name"] == "ds4"
+    assert row["Log Categories"] == "allLogs"
+    assert row["Destination"] == "LogAnalytics:law1, Storage:st1"
