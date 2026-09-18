@@ -8,15 +8,24 @@ requires that the scanning principal's permissions be enumerated and justified.
 
 A custom role granting **control-plane read access only** to exactly the resource
 providers the exporters inventory — nothing more. No `DataActions`, no write/delete,
-and the only non-`read` action is the non-mutating Cost Management usage query.
+and the only non-`read` actions are three non-mutating queries.
 
-### Why `Microsoft.CostManagement/query/action`
+### Why the three `/action` entries
 
-The cost exporter calls the Cost Management **Query** API (`query.usage`), which is a
-`POST` modeled as an `/action` operation ("Query Usage") rather than a `/read`. It
-returns data and changes nothing, but it is **not** covered by
-`Microsoft.CostManagement/*/read`, so it is granted explicitly. It is the only
-`/action` in the role; everything else is `*/read`.
+Some Azure query APIs are `POST` operations modeled as `/action` rather than `/read`.
+They return data and change nothing, but a `*/read` wildcard does not cover them, so
+each is granted explicitly:
+
+| Action | Used by | Operation |
+|---|---|---|
+| `Microsoft.CostManagement/query/action` | `cost_management_export.py` | Query Usage (`query.usage`) |
+| `Microsoft.PolicyInsights/policyStates/queryResults/action` | `policy_compliance_export.py` | Query policy states (`list_query_results_for_subscription`) |
+| `Microsoft.PolicyInsights/policyStates/summarize/action` | `policy_compliance_export.py` | Summarize policy states (`summarize_for_subscription`) |
+
+Source for the PolicyInsights action strings:
+[Azure permissions for Management and governance](https://learn.microsoft.com/azure/role-based-access-control/permissions/management-and-governance#microsoftpolicyinsights)
+— "Query information about policy states" / "Query summary information about policy
+latest states". Everything else in the role is `*/read`.
 
 ### Why no `DataActions`
 
@@ -76,4 +85,4 @@ Cloud Shell or CLI signed in to the government cloud
 
 The `Actions` list mirrors the provider namespaces behind `utils._CLIENT_MAP`. When an
 exporter introduces a **new** `azure-mgmt-*` client, add that provider's `*/read` here.
-The current list covers all 69 exporters.
+The current list covers all 70 exporters.
