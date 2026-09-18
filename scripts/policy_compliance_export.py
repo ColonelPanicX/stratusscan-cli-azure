@@ -20,9 +20,6 @@ except ImportError:
 import pandas as pd
 from azure.mgmt.policyinsights.models import QueryOptions
 
-utils.setup_logging("policy-compliance-export")
-utils.log_script_start("policy_compliance_export.py", "Policy Compliance State Export")
-
 log = utils.get_logger()
 
 NON_COMPLIANT_FILTER = "complianceState eq 'NonCompliant'"

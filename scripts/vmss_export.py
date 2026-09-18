@@ -12,9 +12,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("vmss-export")
-utils.log_script_start("vmss_export.py", "Virtual Machine Scale Sets Export")
-
 log = utils.get_logger()
 
 

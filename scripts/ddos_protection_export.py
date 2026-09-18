@@ -12,9 +12,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("ddos-protection-export")
-utils.log_script_start("ddos_protection_export.py", "DDoS Protection Plans Export")
-
 log = utils.get_logger()
 
 

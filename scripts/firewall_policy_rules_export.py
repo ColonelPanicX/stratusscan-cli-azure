@@ -13,9 +13,6 @@ except ImportError:
 import pandas as pd
 from azure.core.exceptions import HttpResponseError
 
-utils.setup_logging("firewall-policy-rules-export")
-utils.log_script_start("firewall_policy_rules_export.py", "Azure Firewall Policy Rules Export")
-
 log = utils.get_logger()
 
 

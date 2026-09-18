@@ -23,7 +23,13 @@ def harness(monkeypatch, tmp_path):
     for handler in log.handlers:
         if isinstance(handler, logging.StreamHandler):
             handler.setStream(console)
-    yield SimpleNamespace(manifest=manifest, console=console)
+    logging_calls = []
+    # run_exporter configures logging itself now; record the call instead of letting it
+    # replace the buffered handler and write a real log file under logs/
+    monkeypatch.setattr(
+        utils, "setup_logging", lambda *a, **k: logging_calls.append((a, k)) or log
+    )
+    yield SimpleNamespace(manifest=manifest, console=console, logging_calls=logging_calls)
     log.handlers = []
 
 
@@ -262,3 +268,19 @@ def test_manifest_line_written_for_every_outcome(harness):
         with pytest.raises(SystemExit):
             runner.run_exporter(main, "widgets")
     assert [r["status"] for r in _records(harness)] == ["OK", "EMPTY", "FAILED"]
+
+
+def test_runner_configures_logging_with_resolved_subscription(harness, capsys):
+    def main(sub_id, sub_name):
+        return utils.ExportResult(rows=1, filename="/out/z.xlsx")
+
+    _run(main, harness, capsys)
+    ((args, kwargs),) = harness.logging_calls
+    assert args == ("widgets-export",)
+    assert kwargs == {"subscription_id": "sub-1"}
+
+
+def test_script_identity_uses_defining_module_file_and_docstring():
+    file, description = runner._script_identity(runner.run_exporter)
+    assert file == "runner.py"
+    assert description == "StratusScanCLI-Azure — Exporter Runner"

@@ -20,9 +20,6 @@ except ImportError:
 import pandas as pd
 from azure.core.exceptions import HttpResponseError
 
-utils.setup_logging("function-apps-export")
-utils.log_script_start("function_apps_export.py", "Azure Function Apps Export")
-
 log = utils.get_logger()
 
 CONFIG_ENV = "STRATUSSCAN_APPSERVICE_CONFIG"

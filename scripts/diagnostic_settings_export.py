@@ -20,9 +20,6 @@ except ImportError:
 import pandas as pd
 from azure.core.exceptions import HttpResponseError
 
-utils.setup_logging("diagnostic-settings-export")
-utils.log_script_start("diagnostic_settings_export.py", "Diagnostic Settings Cross-Resource Audit Export")
-
 log = utils.get_logger()
 
 PROGRESS_EVERY = 50

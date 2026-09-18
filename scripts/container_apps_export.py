@@ -12,9 +12,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("container-apps-export")
-utils.log_script_start("container_apps_export.py", "Container Apps Export")
-
 log = utils.get_logger()
 
 

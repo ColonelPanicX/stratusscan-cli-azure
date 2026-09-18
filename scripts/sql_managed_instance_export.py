@@ -12,9 +12,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("sql-managed-instance-export")
-utils.log_script_start("sql_managed_instance_export.py", "SQL Managed Instance Export")
-
 log = utils.get_logger()
 
 

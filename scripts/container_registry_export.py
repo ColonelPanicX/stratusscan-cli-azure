@@ -12,9 +12,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("container-registry-export")
-utils.log_script_start("container_registry_export.py", "Container Registry (ACR) Export")
-
 log = utils.get_logger()
 
 

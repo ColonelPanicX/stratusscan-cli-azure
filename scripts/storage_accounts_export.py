@@ -14,9 +14,6 @@ except ImportError:
 import pandas as pd
 from azure.core.exceptions import HttpResponseError
 
-utils.setup_logging("storage-accounts-export")
-utils.log_script_start("storage_accounts_export.py", "Azure Storage Accounts Export")
-
 log = utils.get_logger()
 
 

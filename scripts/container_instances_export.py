@@ -12,9 +12,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("container-instances-export")
-utils.log_script_start("container_instances_export.py", "Container Instances (ACI) Export")
-
 log = utils.get_logger()
 
 

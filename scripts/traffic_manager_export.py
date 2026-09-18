@@ -12,9 +12,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("traffic-manager-export")
-utils.log_script_start("traffic_manager_export.py", "Traffic Manager Profiles Export")
-
 log = utils.get_logger()
 
 

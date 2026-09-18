@@ -12,9 +12,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("batch-accounts-export")
-utils.log_script_start("batch_accounts_export.py", "Batch Accounts Export")
-
 log = utils.get_logger()
 
 

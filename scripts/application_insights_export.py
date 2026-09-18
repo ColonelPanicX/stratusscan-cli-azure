@@ -16,9 +16,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("application-insights-export")
-utils.log_script_start("application_insights_export.py", "Application Insights Export")
-
 log = utils.get_logger()
 
 

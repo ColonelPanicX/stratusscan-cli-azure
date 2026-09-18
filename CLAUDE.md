@@ -107,7 +107,7 @@ except ImportError:
     sys.path.append(str(Path(__file__).parent.parent))
     import utils
 
-utils.setup_logging("my-service-export")
+log = utils.get_logger()  # runner.run_exporter() configures logging; importing must write nothing
 
 
 def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:

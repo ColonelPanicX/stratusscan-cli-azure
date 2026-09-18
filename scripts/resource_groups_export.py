@@ -12,9 +12,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("resource-groups-export")
-utils.log_script_start("resource_groups_export.py", "Azure Resource Groups Export")
-
 log = utils.get_logger()
 
 

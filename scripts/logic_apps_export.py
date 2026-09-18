@@ -12,9 +12,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("logic-apps-export")
-utils.log_script_start("logic_apps_export.py", "Logic Apps (Workflows) Export")
-
 log = utils.get_logger()
 
 

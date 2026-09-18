@@ -19,9 +19,6 @@ except ImportError:
 import pandas as pd
 from azure.core.exceptions import HttpResponseError
 
-utils.setup_logging("role-assignments-export")
-utils.log_script_start("role_assignments_export.py", "Azure RBAC Role Assignments Export")
-
 log = utils.get_logger()
 
 _MANAGEMENT_GROUP_PREFIX = "/providers/microsoft.management/managementgroups/"

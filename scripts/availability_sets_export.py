@@ -12,9 +12,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("availability-sets-export")
-utils.log_script_start("availability_sets_export.py", "Availability Sets Export")
-
 log = utils.get_logger()
 
 

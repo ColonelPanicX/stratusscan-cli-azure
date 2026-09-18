@@ -13,9 +13,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("log-analytics-export")
-utils.log_script_start("log_analytics_export.py", "Log Analytics Workspaces Export")
-
 log = utils.get_logger()
 
 

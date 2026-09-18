@@ -12,9 +12,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("service-endpoints-export")
-utils.log_script_start("service_endpoints_export.py", "Service Endpoints Inventory Export")
-
 log = utils.get_logger()
 
 

@@ -12,9 +12,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("recovery-services-vaults-export")
-utils.log_script_start("recovery_services_vaults_export.py", "Recovery Services Vaults Export")
-
 log = utils.get_logger()
 
 

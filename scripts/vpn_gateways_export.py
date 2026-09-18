@@ -13,9 +13,6 @@ except ImportError:
 import pandas as pd
 from azure.core.exceptions import HttpResponseError
 
-utils.setup_logging("vpn-gateways-export")
-utils.log_script_start("vpn_gateways_export.py", "VPN Gateways Export")
-
 log = utils.get_logger()
 
 

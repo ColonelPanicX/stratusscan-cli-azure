@@ -12,9 +12,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("bastion-hosts-export")
-utils.log_script_start("bastion_hosts_export.py", "Bastion Hosts Export")
-
 log = utils.get_logger()
 
 

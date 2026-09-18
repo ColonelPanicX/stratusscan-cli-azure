@@ -12,9 +12,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("subnets-export")
-utils.log_script_start("subnets_export.py", "Azure Subnets Export")
-
 log = utils.get_logger()
 
 

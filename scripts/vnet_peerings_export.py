@@ -12,9 +12,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("vnet-peerings-export")
-utils.log_script_start("vnet_peerings_export.py", "Azure VNet Peerings Export")
-
 log = utils.get_logger()
 
 

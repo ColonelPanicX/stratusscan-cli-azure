@@ -12,9 +12,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("service-bus-export")
-utils.log_script_start("service_bus_export.py", "Service Bus Namespaces Export")
-
 log = utils.get_logger()
 
 

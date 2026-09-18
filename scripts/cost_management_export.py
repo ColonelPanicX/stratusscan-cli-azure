@@ -12,9 +12,10 @@ retried here, bounded, honoring that header.
 
 import sys
 import time
+from collections.abc import Callable
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 
 try:
     import utils
@@ -25,9 +26,6 @@ except ImportError:
 import pandas as pd
 from azure.core.exceptions import HttpResponseError
 from azure.core.rest import HttpRequest
-
-utils.setup_logging("cost-management-export")
-utils.log_script_start("cost_management_export.py", "Azure Cost Management Export")
 
 log = utils.get_logger()
 
@@ -52,14 +50,14 @@ MAX_ATTEMPTS = 3
 DEFAULT_THROTTLE_PAUSE_S = 10.0
 
 
-def _header(headers: Any, name: str) -> Optional[str]:
+def _header(headers: Any, name: str) -> str | None:
     for key, value in (headers or {}).items():
         if str(key).lower() == name:
             return str(value)
     return None
 
 
-def throttle_delay(exc: HttpResponseError) -> Optional[float]:
+def throttle_delay(exc: HttpResponseError) -> float | None:
     """Seconds to wait before re-issuing a 429 the SDK did not retry; None when this exporter must not retry it."""
     if getattr(exc, "status_code", None) != 429:
         return None
@@ -106,7 +104,7 @@ def _page_rows(result, scope: str) -> list:
     columns = [getattr(c, "name", "") for c in (result.columns or [])]
     rows = []
     for raw in result.rows or []:
-        row = dict(zip(columns, raw))
+        row = dict(zip(columns, raw, strict=False))
         row.setdefault("Currency", "")
         row["Scope"] = scope
         row["Timeframe"] = TIMEFRAME

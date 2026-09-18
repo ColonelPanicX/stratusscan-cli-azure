@@ -12,9 +12,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("snapshots-export")
-utils.log_script_start("snapshots_export.py", "Disk Snapshots Export")
-
 log = utils.get_logger()
 
 

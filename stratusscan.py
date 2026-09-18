@@ -17,24 +17,17 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Optional
 
 # Ensure local modules are importable from the project root.
 sys.path.insert(0, str(Path(__file__).parent))
 
 import bootstrap
 
-bootstrap.ensure_dependencies()
-
 try:
     import utils
 except ImportError:
     print("ERROR: Could not import utils.py. Make sure it is in the same directory.")
     sys.exit(1)
-
-utils.setup_logging("main-menu", log_to_file=True)
-utils.log_script_start("stratusscan.py", "StratusScan Main Menu")
-utils.log_system_info()
 
 SCRIPTS_DIR = Path(__file__).parent / "scripts"
 
@@ -268,7 +261,7 @@ def _manifest_record(run_id: str, script_rel_path: str, sub_id: str) -> dict:
     return {}
 
 
-def _outcome_line(status: str, rc: Optional[int], duration: float, record: dict) -> str:
+def _outcome_line(status: str, rc: int | None, duration: float, record: dict) -> str:
     if status == STATUS_OK:
         if record.get("status") == STATUS_SKIPPED:
             return f"{STATUS_SKIPPED} ({duration}s)"
@@ -414,7 +407,7 @@ RUN_REPORT_COLUMNS = [
 ]
 
 
-def write_run_report(outcomes: list, label: str, run_id: str) -> Optional[str]:
+def write_run_report(outcomes: list, label: str, run_id: str) -> str | None:
     """Write output/run-report-{label}-{run_id}.xlsx; return its path (None when there is nothing to report)."""
     if not outcomes:
         return None
@@ -433,7 +426,7 @@ def _run_all_exporters(
     exporters: list,
     subs: list,
     package_outputs: bool = False,
-    package_label: Optional[str] = None,
+    package_label: str | None = None,
 ) -> list:
     """Run every exporter for every subscription; return the outcome rows (also written to the run report)."""
     run_id = new_run_id()
@@ -467,7 +460,7 @@ def _run_all_exporters(
     return outcomes
 
 
-def _package_outputs(label: Optional[str] = None, run_id: Optional[str] = None) -> None:
+def _package_outputs(label: str | None = None, run_id: str | None = None) -> None:
     zip_path = utils.archive_outputs(label, run_id)
     if not zip_path:
         print("\nNo exports found in output/ to package.")
@@ -592,6 +585,11 @@ def _environment_label_or_exit() -> str:
 
 
 def main() -> None:
+    bootstrap.ensure_dependencies()
+    utils.setup_logging("main-menu", log_to_file=True)
+    utils.log_script_start("stratusscan.py", "StratusScan Main Menu")
+    utils.log_system_info()
+
     env_label = _environment_label_or_exit()
 
     if utils.is_auto_run():

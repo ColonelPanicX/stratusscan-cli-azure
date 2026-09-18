@@ -20,9 +20,6 @@ except ImportError:
 import pandas as pd
 from azure.core.exceptions import HttpResponseError
 
-utils.setup_logging("azure-sql-export")
-utils.log_script_start("azure_sql_export.py", "Azure SQL Servers & Databases Export")
-
 log = utils.get_logger()
 
 _SERVERS_EXPAND = "administrators/activedirectory"

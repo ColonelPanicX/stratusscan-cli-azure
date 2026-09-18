@@ -17,9 +17,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("action-groups-export")
-utils.log_script_start("action_groups_export.py", "Action Groups Export")
-
 log = utils.get_logger()
 
 _REDACTED_MARKER = "?…redacted"

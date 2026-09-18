@@ -12,9 +12,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("network-watchers-export")
-utils.log_script_start("network_watchers_export.py", "Network Watchers Export")
-
 log = utils.get_logger()
 
 

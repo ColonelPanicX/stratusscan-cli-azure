@@ -14,9 +14,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("advisor-export")
-utils.log_script_start("advisor_export.py", "Azure Advisor Recommendations Export")
-
 log = utils.get_logger()
 
 _RECOMMENDATION_SUFFIX = re.compile(

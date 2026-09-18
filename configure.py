@@ -18,16 +18,11 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 import bootstrap
 
-bootstrap.ensure_dependencies()
-
 try:
     import utils
 except ImportError:
     print("ERROR: Could not import utils.py.")
     sys.exit(1)
-
-utils.setup_logging("configure", log_to_file=True)
-utils.log_script_start("configure.py", "StratusScan Configuration Wizard")
 
 log = utils.get_logger()
 
@@ -187,6 +182,10 @@ def _print_summary(config: dict) -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
+    bootstrap.ensure_dependencies()
+    utils.setup_logging("configure", log_to_file=True)
+    utils.log_script_start("configure.py", "StratusScan Configuration Wizard")
+
     print("\n" + "=" * 64)
     print("  StratusScanCLI-Azure — Configuration Wizard")
     print(f"  Version: {utils.get_version()}")

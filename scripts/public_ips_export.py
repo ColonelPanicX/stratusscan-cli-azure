@@ -12,9 +12,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("public-ips-export")
-utils.log_script_start("public_ips_export.py", "Azure Public IP Addresses Export")
-
 log = utils.get_logger()
 
 _RESOURCE_TYPE_LABELS = {

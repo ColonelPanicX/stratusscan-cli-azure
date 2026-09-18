@@ -189,6 +189,9 @@ def test_auto_run_exit_code(monkeypatch, statuses, expected):
     monkeypatch.delenv("AZURE_ENVIRONMENT", raising=False)
     outcomes = [{"Exporter": "x", "Subscription": "s", "Status": s} for s in statuses]
     monkeypatch.setattr(stratusscan, "_run_all_exporters", lambda *a, **k: outcomes)
+    # main() bootstraps dependencies and opens a log file; neither belongs in a unit test
+    monkeypatch.setattr(stratusscan.bootstrap, "ensure_dependencies", lambda: None)
+    monkeypatch.setattr(utils, "setup_logging", lambda *a, **k: utils.get_logger())
 
     with pytest.raises(SystemExit) as info:
         stratusscan.main()

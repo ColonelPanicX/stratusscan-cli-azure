@@ -12,9 +12,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("front-door-export")
-utils.log_script_start("front_door_export.py", "Front Door & CDN Profiles Export")
-
 log = utils.get_logger()
 
 

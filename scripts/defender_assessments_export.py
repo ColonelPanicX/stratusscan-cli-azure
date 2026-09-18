@@ -19,9 +19,6 @@ except ImportError:
 import pandas as pd
 from azure.core.exceptions import HttpResponseError
 
-utils.setup_logging("defender-assessments-export")
-utils.log_script_start("defender_assessments_export.py", "Defender Security Assessments Export")
-
 log = utils.get_logger()
 
 

@@ -12,9 +12,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("nsg-export")
-utils.log_script_start("network_security_groups_export.py", "Azure NSG Export")
-
 log = utils.get_logger()
 
 _ANY_SOURCES = {"*", "0.0.0.0/0", "::/0", "internet"}

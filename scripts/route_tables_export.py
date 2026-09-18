@@ -12,9 +12,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("route-tables-export")
-utils.log_script_start("route_tables_export.py", "Azure Route Tables Export")
-
 log = utils.get_logger()
 
 _DEFAULT_ROUTE_PREFIXES = {"0.0.0.0/0", "::/0"}

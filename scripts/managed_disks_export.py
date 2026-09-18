@@ -12,9 +12,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("managed-disks-export")
-utils.log_script_start("managed_disks_export.py", "Azure Managed Disks Export")
-
 log = utils.get_logger()
 
 
