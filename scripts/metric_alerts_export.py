@@ -13,9 +13,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("metric-alerts-export")
-utils.log_script_start("metric_alerts_export.py", "Metric Alerts & Activity Log Alerts Export")
-
 log = utils.get_logger()
 
 _WEBTEST_ODATA_TYPE = "Microsoft.Azure.Monitor.WebtestLocationAvailabilityCriteria"

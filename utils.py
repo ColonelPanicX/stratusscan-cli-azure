@@ -9,7 +9,7 @@ logging, Excel output, and config I/O.
 
 Design constraints:
 - No print() calls in this module — return structured results only
-- setup_logging() must be called explicitly by each script; never auto-called on import
+- setup_logging() is called from main() (entry points) or runner.run_exporter() (exporters); never on import
 - CloudShell-first: all paths must work in a fresh Azure Cloud Shell session
 """
 
@@ -23,9 +23,10 @@ import sys
 import threading
 import warnings
 from dataclasses import dataclass, field
-from importlib.metadata import version as _pkg_version, PackageNotFoundError
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _pkg_version
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Version
@@ -42,7 +43,7 @@ def get_version() -> str:
 # Logging
 # ---------------------------------------------------------------------------
 
-logger: Optional[logging.Logger] = None
+logger: logging.Logger | None = None
 _logging_configured = False
 
 
@@ -59,7 +60,7 @@ def _cleanup_old_logs(logs_dir: Path, retention_days: int = 14) -> None:
         pass
 
 
-def _log_subscription_tag(subscription_id: Optional[str]) -> str:
+def _log_subscription_tag(subscription_id: str | None) -> str:
     sub_id = (subscription_id or os.environ.get("STRATUSSCAN_SUBSCRIPTION_ID", "")).strip()
     return sub_id[:8] if sub_id else "nosub"
 
@@ -67,13 +68,13 @@ def _log_subscription_tag(subscription_id: Optional[str]) -> str:
 def setup_logging(
     script_name: str = "stratusscan",
     log_to_file: bool = True,
-    subscription_id: Optional[str] = None,
+    subscription_id: str | None = None,
 ) -> logging.Logger:
     """
-    Configure the shared logger. Exporters call this at import time, before the
-    runner has resolved a subscription, so the file name falls back to the
-    STRATUSSCAN_SUBSCRIPTION_ID the orchestrator injects — that is what keeps a
-    multi-subscription Run All from overwriting one subscription's log with another's.
+    Configure the shared logger. runner.run_exporter() calls this with the resolved
+    subscription; without one the file name falls back to the STRATUSSCAN_SUBSCRIPTION_ID
+    the orchestrator injects — that is what keeps a multi-subscription Run All from
+    overwriting one subscription's log with another's.
     """
     global logger, _logging_configured
 
@@ -148,7 +149,7 @@ def is_auto_run() -> bool:
     return os.environ.get("STRATUSSCAN_AUTO_RUN", "").strip() == "1"
 
 
-def get_auto_subscriptions() -> List[str]:
+def get_auto_subscriptions() -> list[str]:
     raw = os.environ.get("STRATUSSCAN_SUBSCRIPTIONS", "").strip()
     if not raw:
         return []
@@ -184,7 +185,7 @@ def create_export_filename(subscription_name: str, resource_type: str, suffix: s
     return str(out_dir / filename)
 
 
-def extract_resource_group(resource_id: Optional[str]) -> str:
+def extract_resource_group(resource_id: str | None) -> str:
     """
     Return the resource group name from an Azure resource ID, or "" if absent.
 
@@ -228,9 +229,9 @@ def _output_dir() -> Path:
     return out_dir
 
 
-def _run_files(out_dir: Path, run_id: str) -> List[Path]:
+def _run_files(out_dir: Path, run_id: str) -> list[Path]:
     """Workbooks the manifest attributes to run_id, plus that run's report, that still exist."""
-    files: Dict[str, Path] = {}
+    files: dict[str, Path] = {}
     for record in read_run_results(run_id):
         path = record.get("file")
         if path and Path(path).exists():
@@ -240,7 +241,7 @@ def _run_files(out_dir: Path, run_id: str) -> List[Path]:
     return sorted(files.values(), key=lambda p: p.name)
 
 
-def archive_outputs(label: Optional[str] = None, run_id: Optional[str] = None) -> Optional[str]:
+def archive_outputs(label: str | None = None, run_id: str | None = None) -> str | None:
     """
     Bundle exports from output/ into a single zip.
 
@@ -298,8 +299,8 @@ class ExportResult:
     """What an exporter's main() hands back to the runner."""
 
     rows: int
-    filename: Optional[str]
-    errors: List[Dict[str, str]] = field(default_factory=list)
+    filename: str | None
+    errors: list[dict[str, str]] = field(default_factory=list)
 
 
 def error_code(exc: BaseException) -> str:
@@ -322,7 +323,7 @@ def error_message(exc: BaseException) -> str:
     return type(exc).__name__
 
 
-def error_record(scope: str, operation: str, exc: BaseException) -> Dict[str, str]:
+def error_record(scope: str, operation: str, exc: BaseException) -> dict[str, str]:
     """One row for the Errors sheet: which parent failed, on which call, and why."""
     return {
         "Scope": scope,
@@ -347,14 +348,14 @@ def manifest_path() -> Path:
     return _output_dir() / _MANIFEST_NAME
 
 
-def record_run_result(**fields: Any) -> Optional[str]:
+def record_run_result(**fields: Any) -> str | None:
     """
     Append one outcome line to output/.run-manifest.jsonl and return its path.
 
     Recording must never break an export, so an unwritable manifest is logged
     and swallowed here — the exit code still carries the outcome.
     """
-    record: Dict[str, Any] = {
+    record: dict[str, Any] = {
         "run_id": get_run_id(),
         "timestamp": datetime.datetime.now().isoformat(timespec="seconds"),
     }
@@ -369,12 +370,12 @@ def record_run_result(**fields: Any) -> Optional[str]:
         return None
 
 
-def read_run_results(run_id: str) -> List[Dict[str, Any]]:
+def read_run_results(run_id: str) -> list[dict[str, Any]]:
     """Return the manifest records for run_id in file order; malformed lines are skipped."""
     path = manifest_path()
     if not path.exists():
         return []
-    records: List[Dict[str, Any]] = []
+    records: list[dict[str, Any]] = []
     try:
         with open(path, encoding="utf-8") as fh:
             for line in fh:
@@ -459,7 +460,7 @@ def _normalize_cells(df):
     return out
 
 
-def _errors_frame(errors: Optional[List[Dict[str, str]]]):
+def _errors_frame(errors: list[dict[str, str]] | None):
     import pandas as pd
 
     return pd.DataFrame(list(errors or []), columns=list(ERROR_COLUMNS))
@@ -469,7 +470,7 @@ def save_dataframe_to_excel(
     df,
     filename: str,
     sheet_name: str = "Export",
-    errors: Optional[List[Dict[str, str]]] = None,
+    errors: list[dict[str, str]] | None = None,
 ) -> str:
     """
     Write a single DataFrame to an Excel workbook.
@@ -479,7 +480,6 @@ def save_dataframe_to_excel(
 
     Returns the filename on success, raises on failure.
     """
-    import pandas as pd
     from openpyxl import load_workbook
 
     if errors:
@@ -504,9 +504,9 @@ def save_dataframe_to_excel(
 
 
 def save_multiple_dataframes_to_excel(
-    sheets: Dict[str, Any],
+    sheets: dict[str, Any],
     filename: str,
-    errors: Optional[List[Dict[str, str]]] = None,
+    errors: list[dict[str, str]] | None = None,
 ) -> str:
     """
     Write multiple DataFrames to an Excel workbook, one sheet per key.
@@ -548,11 +548,11 @@ def save_multiple_dataframes_to_excel(
 # ---------------------------------------------------------------------------
 
 _config_lock = threading.Lock()
-_config_cache: Optional[Dict] = None
+_config_cache: dict | None = None
 
 _CONFIG_PATH = Path(__file__).parent / "config.json"
 
-_DEFAULT_CONFIG: Dict = {
+_DEFAULT_CONFIG: dict = {
     "subscriptions": [],
     "default_subscription_id": "",
     "environment": "auto",
@@ -561,7 +561,7 @@ _DEFAULT_CONFIG: Dict = {
 }
 
 
-def get_config() -> Dict:
+def get_config() -> dict:
     """Thread-safe singleton loader for config.json."""
     global _config_cache
     with _config_lock:
@@ -580,7 +580,7 @@ def get_config() -> Dict:
         return _config_cache
 
 
-def save_config(data: Dict) -> None:
+def save_config(data: dict) -> None:
     global _config_cache
     with _config_lock:
         with open(_CONFIG_PATH, "w", encoding="utf-8") as fh:
@@ -593,10 +593,10 @@ def save_config(data: Dict) -> None:
 # ---------------------------------------------------------------------------
 
 # Services unavailable in AzureUSGovernment (extend as needed)
-_GOV_UNAVAILABLE: List[str] = []
+_GOV_UNAVAILABLE: list[str] = []
 
 
-def detect_azure_cloud() -> Optional[str]:
+def detect_azure_cloud() -> str | None:
     """
     Best-effort detection of the active Azure cloud from the Azure CLI context.
 
@@ -692,7 +692,7 @@ def is_service_available_in_environment(service: str, environment: str) -> bool:
 # ---------------------------------------------------------------------------
 
 _credential_lock = threading.Lock()
-_credential_cache: Optional[Any] = None
+_credential_cache: Any | None = None
 
 
 def _get_credential():
@@ -702,7 +702,7 @@ def _get_credential():
         if _credential_cache is not None:
             return _credential_cache
         try:
-            from azure.identity import DefaultAzureCredential, AzureAuthorityHosts
+            from azure.identity import AzureAuthorityHosts, DefaultAzureCredential
         except ImportError as exc:
             raise ImportError("azure-identity is required: pip install azure-identity") from exc
 
@@ -730,7 +730,7 @@ def get_credential() -> Any:
 
 
 # Lazy import map: service_name → (module_path, class_name, needs_subscription_id)
-_CLIENT_MAP: Dict[str, tuple] = {
+_CLIENT_MAP: dict[str, tuple] = {
     "subscription": ("azure.mgmt.resource.subscriptions", "SubscriptionClient", False),
     "resource": ("azure.mgmt.resource.resources", "ResourceManagementClient", True),
     "compute": ("azure.mgmt.compute", "ComputeManagementClient", True),
@@ -780,13 +780,13 @@ _GOV_ARM_SCOPE = "https://management.core.usgovcloudapi.net/.default"
 
 # Azure Government can lag public cloud SDK defaults. Keep overrides targeted
 # to services that have been observed failing against the default api-version.
-_GOV_API_VERSIONS: Dict[str, str] = {
+_GOV_API_VERSIONS: dict[str, str] = {
     "storage": "2025-06-01",
     "web": "2025-03-01",
 }
 
 
-def get_azure_client(service_name: str, subscription_id: Optional[str] = None) -> Any:
+def get_azure_client(service_name: str, subscription_id: str | None = None) -> Any:
     """
     Return an instantiated azure-mgmt-* client for the given service.
 
@@ -829,7 +829,7 @@ def get_azure_client(service_name: str, subscription_id: Optional[str] = None) -
     cred = _get_credential()
     environment = detect_environment()
 
-    kwargs: Dict[str, Any] = {}
+    kwargs: dict[str, Any] = {}
     if environment == "government":
         kwargs["base_url"] = _GOV_BASE_URL
         kwargs["credential_scopes"] = [_GOV_ARM_SCOPE]
@@ -873,7 +873,7 @@ class AzureAccessError(Exception):
         )
 
 
-def list_subscriptions() -> List[Dict[str, str]]:
+def list_subscriptions() -> list[dict[str, str]]:
     """
     Return all subscriptions accessible to the current credential.
 
@@ -939,10 +939,10 @@ def resolve_target_subscription() -> tuple:
 
 def prompt_menu(
     title: str,
-    options: List[str],
+    options: list[str],
     allow_back: bool = True,
     allow_exit: bool = True,
-) -> Union[int, str]:
+) -> int | str:
     """
     Display a numbered menu and return the user's choice.
 

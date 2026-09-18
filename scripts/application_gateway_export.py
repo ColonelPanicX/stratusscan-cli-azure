@@ -13,9 +13,6 @@ except ImportError:
 import pandas as pd
 from azure.core.exceptions import HttpResponseError
 
-utils.setup_logging("application-gateway-export")
-utils.log_script_start("application_gateway_export.py", "Azure Application Gateways Export")
-
 log = utils.get_logger()
 
 

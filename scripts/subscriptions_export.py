@@ -12,9 +12,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("subscriptions-export")
-utils.log_script_start("subscriptions_export.py", "Azure Subscriptions Export")
-
 log = utils.get_logger()
 
 
@@ -39,7 +36,6 @@ def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
         })
 
     df = pd.DataFrame(rows)
-    timestamp = utils.get_current_timestamp()
     filename = utils.create_export_filename("TENANT", "subscriptions", "all")
     utils.save_dataframe_to_excel(df, filename, sheet_name="Subscriptions")
     print(f"Exported {len(rows)} subscription(s) → {filename}")

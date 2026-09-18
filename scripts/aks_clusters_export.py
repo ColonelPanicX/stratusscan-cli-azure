@@ -12,9 +12,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("aks-clusters-export")
-utils.log_script_start("aks_clusters_export.py", "Azure Kubernetes Service Clusters Export")
-
 log = utils.get_logger()
 
 

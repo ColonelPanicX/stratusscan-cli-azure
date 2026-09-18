@@ -12,9 +12,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("managed-identities-export")
-utils.log_script_start("managed_identities_export.py", "Managed Identities Export")
-
 log = utils.get_logger()
 
 

@@ -12,9 +12,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("automation-accounts-export")
-utils.log_script_start("automation_accounts_export.py", "Automation Accounts Export")
-
 log = utils.get_logger()
 
 

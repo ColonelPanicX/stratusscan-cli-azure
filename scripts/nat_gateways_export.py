@@ -12,9 +12,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("nat-gateways-export")
-utils.log_script_start("nat_gateways_export.py", "NAT Gateways Export")
-
 log = utils.get_logger()
 
 

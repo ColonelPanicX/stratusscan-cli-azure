@@ -12,9 +12,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("virtual-machines-export")
-utils.log_script_start("virtual_machines_export.py", "Azure Virtual Machines Export")
-
 log = utils.get_logger()
 
 

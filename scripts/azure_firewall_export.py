@@ -12,9 +12,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("azure-firewall-export")
-utils.log_script_start("azure_firewall_export.py", "Azure Firewall Export")
-
 log = utils.get_logger()
 
 

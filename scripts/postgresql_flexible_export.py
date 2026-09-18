@@ -12,9 +12,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("postgresql-flexible-export")
-utils.log_script_start("postgresql_flexible_export.py", "PostgreSQL Flexible Server Export")
-
 log = utils.get_logger()
 
 

@@ -12,9 +12,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("redis-cache-export")
-utils.log_script_start("redis_cache_export.py", "Redis Cache Export")
-
 log = utils.get_logger()
 
 

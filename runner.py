@@ -21,7 +21,8 @@ Exit codes:
 import sys
 import time
 from collections.abc import Callable
-from typing import Any, Optional
+from pathlib import Path
+from typing import Any
 
 import utils
 
@@ -81,7 +82,15 @@ def _exit_code_of(exc: SystemExit) -> int:
     return EXIT_FAILED
 
 
-def run_exporter(main: Callable[[str, str], Optional[utils.ExportResult]], script_name: str) -> None:
+def _script_identity(main: Callable) -> tuple[str, str]:
+    """(file name, first docstring line) of the module that defines main(), for the log header."""
+    module = sys.modules.get(getattr(main, "__module__", ""))
+    file = getattr(module, "__file__", None) or ""
+    doc_lines = (getattr(module, "__doc__", None) or "").strip().splitlines()
+    return (Path(file).name if file else "<unknown>", doc_lines[0] if doc_lines else "")
+
+
+def run_exporter(main: Callable[[str, str], utils.ExportResult | None], script_name: str) -> None:
     """
     Run an exporter's main(subscription_id, subscription_name) and exit with its outcome.
 
@@ -92,8 +101,8 @@ def run_exporter(main: Callable[[str, str], Optional[utils.ExportResult]], scrip
     started = time.monotonic()
     sub_id, sub_name = "", ""
 
-    def finish(code: int, *, rows: Optional[int] = 0, filename: Optional[str] = None,
-               errors: int = 0, detail: str = "", status: Optional[str] = None) -> None:
+    def finish(code: int, *, rows: int | None = 0, filename: str | None = None,
+               errors: int = 0, detail: str = "", status: str | None = None) -> None:
         utils.record_run_result(
             script=script_name,
             subscription_id=sub_id,
@@ -110,6 +119,8 @@ def run_exporter(main: Callable[[str, str], Optional[utils.ExportResult]], scrip
         sys.exit(code)
 
     sub_id, sub_name = utils.resolve_target_subscription()
+    utils.setup_logging(f"{script_name}-export", subscription_id=sub_id or None)
+    utils.log_script_start(*_script_identity(main))
     if not sub_id:
         print(NO_SUBSCRIPTION_MESSAGE)
         finish(EXIT_CONFIG, detail="no subscription targeted")

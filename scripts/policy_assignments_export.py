@@ -14,9 +14,6 @@ except ImportError:
 import pandas as pd
 from azure.core.exceptions import HttpResponseError
 
-utils.setup_logging("policy-assignments-export")
-utils.log_script_start("policy_assignments_export.py", "Azure Policy Assignments Export")
-
 log = utils.get_logger()
 
 

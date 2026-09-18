@@ -86,8 +86,6 @@ dependencies = [
     "azure-keyvault-certificates>=4.7.0,<5.0.0",
     "pandas>=2.0.0",
     "openpyxl>=3.1.0",
-    "python-dateutil>=2.8.2",
-    "questionary>=2.0.0",
 ]
 
 [project.optional-dependencies]
@@ -99,19 +97,12 @@ dev = [
     "mypy>=1.5.0",
 ]
 
-[project.scripts]
-stratusscan = "stratusscan:main"
-stratusscan-configure = "configure:main"
-
 [project.urls]
 Repository = "https://github.com/ColonelPanicX/StratusScan-CLI-Azure"
 
+# Clone-and-run only (v0.1.x): py-modules exists so `pip install -e ".[dev]"` works in CI.
 [tool.setuptools]
-py-modules = ["stratusscan", "configure", "utils"]
-include-package-data = true
-
-[tool.setuptools.package-data]
-"*" = ["reference/*.json", "config.json", "policies/*.json"]
+py-modules = ["stratusscan", "configure", "utils", "runner", "bootstrap"]
 
 [tool.black]
 line-length = 100
@@ -120,14 +111,14 @@ target-version = ['py310', 'py311']
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+exclude = [".git", ".venv", "venv", "__pycache__", "build", "dist"]
 
+[tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "SIM"]
 ignore = [
     "E501",
     "B008",
 ]
-
-exclude = [".git", ".venv", "venv", "__pycache__", "build", "dist"]
 
 [tool.pytest.ini_options]
 minversion = "7.0"
@@ -135,14 +126,12 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+pythonpath = ["."]
 
+# Coverage is opt-in (`--cov=.`), so a local run needs neither pytest-cov nor writes htmlcov/.
 addopts = [
-    "-v",
     "--strict-markers",
     "-m", "not azure",
-    "--cov=.",
-    "--cov-report=html",
-    "--cov-report=term-missing",
 ]
 
 markers = [

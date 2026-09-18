@@ -30,9 +30,6 @@ from azure.keyvault.certificates import CertificateClient
 from azure.keyvault.keys import KeyClient
 from azure.keyvault.secrets import SecretClient
 
-utils.setup_logging("key-vault-objects-export")
-utils.log_script_start("key_vault_objects_export.py", "Azure Key Vault Objects Export")
-
 log = utils.get_logger()
 
 ACCESS_OK = "OK"

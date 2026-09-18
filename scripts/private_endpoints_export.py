@@ -12,9 +12,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("private-endpoints-export")
-utils.log_script_start("private_endpoints_export.py", "Private Endpoints Export")
-
 log = utils.get_logger()
 
 

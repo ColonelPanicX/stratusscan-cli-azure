@@ -13,9 +13,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("resource-tags-export")
-utils.log_script_start("resource_tags_export.py", "Resource Tags Inventory Export")
-
 log = utils.get_logger()
 
 

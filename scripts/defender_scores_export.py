@@ -12,9 +12,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("defender-scores-export")
-utils.log_script_start("defender_scores_export.py", "Defender Secure Score & Plans Export")
-
 log = utils.get_logger()
 
 

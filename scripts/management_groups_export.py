@@ -5,7 +5,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-
 try:
     import utils
 except ImportError:
@@ -13,9 +12,6 @@ except ImportError:
     import utils
 
 import pandas as pd
-
-utils.setup_logging("management-groups-export")
-utils.log_script_start("management_groups_export.py", "Management Groups Export")
 
 log = utils.get_logger()
 

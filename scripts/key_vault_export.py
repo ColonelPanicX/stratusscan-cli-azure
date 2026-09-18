@@ -12,9 +12,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("key-vault-export")
-utils.log_script_start("key_vault_export.py", "Azure Key Vault Export")
-
 log = utils.get_logger()
 
 

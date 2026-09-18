@@ -12,9 +12,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("mysql-flexible-export")
-utils.log_script_start("mysql_flexible_export.py", "MySQL Flexible Server Export")
-
 log = utils.get_logger()
 
 

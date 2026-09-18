@@ -4,16 +4,20 @@ import json
 
 import pytest
 
-# importing configure runs bootstrap.ensure_dependencies(); skip rather than pip-install on a bare machine
-pytest.importorskip("azure.identity")
-
-import configure  # noqa: E402
-import utils  # noqa: E402
+import configure
+import utils
 
 _SUBS = [
     {"id": "sub-a", "name": "Alpha", "state": "Enabled", "tenant_id": "t"},
     {"id": "sub-b", "name": "Bravo", "state": "Enabled", "tenant_id": "t"},
 ]
+
+
+@pytest.fixture(autouse=True)
+def no_bootstrap_or_log_file(monkeypatch):
+    """main() bootstraps dependencies and opens a log file; neither belongs in a unit test."""
+    monkeypatch.setattr(configure.bootstrap, "ensure_dependencies", lambda: None)
+    monkeypatch.setattr(utils, "setup_logging", lambda *a, **k: utils.get_logger())
 
 
 @pytest.fixture

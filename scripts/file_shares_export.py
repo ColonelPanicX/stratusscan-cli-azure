@@ -12,9 +12,10 @@ STRATUSSCAN_STORAGE_LIST_PACE_S (seconds, default 0) spaces the per-account call
 import os
 import sys
 import time
+from collections.abc import Callable
 from functools import partial
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 
 try:
     import utils
@@ -24,9 +25,6 @@ except ImportError:
 
 import pandas as pd
 from azure.core.exceptions import HttpResponseError
-
-utils.setup_logging("file-shares-export")
-utils.log_script_start("file_shares_export.py", "File Shares Inventory Export")
 
 log = utils.get_logger()
 
@@ -44,7 +42,7 @@ def list_pace_seconds() -> float:
     return max(pace, 0.0)
 
 
-def retry_after_seconds(exc: HttpResponseError) -> Optional[float]:
+def retry_after_seconds(exc: HttpResponseError) -> float | None:
     headers = getattr(getattr(exc, "response", None), "headers", None) or {}
     for key, value in headers.items():
         if str(key).lower() == "retry-after":

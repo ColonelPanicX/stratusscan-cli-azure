@@ -12,9 +12,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("virtual-networks-export")
-utils.log_script_start("virtual_networks_export.py", "Azure Virtual Networks Export")
-
 log = utils.get_logger()
 
 

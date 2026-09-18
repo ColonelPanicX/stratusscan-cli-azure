@@ -12,9 +12,6 @@ except ImportError:
 
 import pandas as pd
 
-utils.setup_logging("policy-definitions-export")
-utils.log_script_start("policy_definitions_export.py", "Custom Policy Definitions Export")
-
 log = utils.get_logger()
 
 
