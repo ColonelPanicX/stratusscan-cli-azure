@@ -11,7 +11,6 @@ except ImportError:
     import utils
 
 import pandas as pd
-from azure.core.exceptions import HttpResponseError
 
 utils.setup_logging("logic-apps-export")
 utils.log_script_start("logic_apps_export.py", "Logic Apps (Workflows) Export")
@@ -19,22 +18,10 @@ utils.log_script_start("logic_apps_export.py", "Logic Apps (Workflows) Export")
 log = utils.get_logger()
 
 
-def collect_workflows(subscription_id: str) -> tuple:
+def collect_workflows(subscription_id: str) -> list:
     client = utils.get_azure_client("logic", subscription_id)
     log.info("Listing Logic App workflows in subscription %s", subscription_id)
-    if hasattr(client.workflows, "list_by_subscription"):
-        return list(client.workflows.list_by_subscription()), []
-
-    resource = utils.get_azure_client("resource", subscription_id)
-    workflows = []
-    errors: list = []
-    for rg in resource.resource_groups.list():
-        try:
-            workflows.extend(client.workflows.list_by_resource_group(rg.name))
-        except HttpResponseError as exc:
-            errors.append(utils.error_record(rg.name, "workflows.list_by_resource_group", exc))
-            log.warning("Failed to list Logic App workflows in %s: %s", rg.name, exc)
-    return workflows, errors
+    return list(utils.list_subscription_wide(client.workflows, "list_by_subscription", "list"))
 
 
 def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
@@ -42,10 +29,11 @@ def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     if not utils.is_service_available_in_environment("logic", environment):
         sys.exit(0)
 
-    workflows, errors = collect_workflows(subscription_id)
-    if not workflows and not errors:
+    workflows = collect_workflows(subscription_id)
+    if not workflows:
         raise utils.NoResourcesFound("Logic App workflows")
 
+    errors: list = []
     rows = []
     for wf in workflows:
         tags = wf.tags or {}

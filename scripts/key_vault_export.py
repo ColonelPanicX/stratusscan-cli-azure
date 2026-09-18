@@ -11,7 +11,6 @@ except ImportError:
     import utils
 
 import pandas as pd
-from azure.core.exceptions import HttpResponseError
 
 utils.setup_logging("key-vault-export")
 utils.log_script_start("key_vault_export.py", "Azure Key Vault Export")
@@ -20,18 +19,10 @@ log = utils.get_logger()
 
 
 def collect_vaults(subscription_id: str) -> list:
+    """vaults.list_by_subscription returns full Vault models with properties; vaults.list returns bare TrackedResource."""
     client = utils.get_azure_client("keyvault", subscription_id)
     log.info("Listing all key vaults in subscription %s", subscription_id)
-    return list(client.vaults.list())
-
-
-def _get_vault_detail(client, resource_group: str, name: str, errors: list):
-    try:
-        return client.vaults.get(resource_group, name)
-    except HttpResponseError as exc:
-        errors.append(utils.error_record(name, "vaults.get", exc))
-        log.warning("Could not get vault detail for %s: %s", name, exc)
-        return None
+    return list(client.vaults.list_by_subscription())
 
 
 def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
@@ -39,18 +30,14 @@ def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     if not utils.is_service_available_in_environment("keyvault", environment):
         sys.exit(0)
 
-    client = utils.get_azure_client("keyvault", subscription_id)
-    vaults_summary = collect_vaults(subscription_id)
-    if not vaults_summary:
+    vaults = collect_vaults(subscription_id)
+    if not vaults:
         raise utils.NoResourcesFound("key vaults")
 
     rows = []
     errors: list = []
-    for vault_ref in vaults_summary:
-        rg = utils.extract_resource_group(vault_ref.id)
-        vault = _get_vault_detail(client, rg, vault_ref.name, errors)
-        if vault is None:
-            continue
+    for vault in vaults:
+        rg = utils.extract_resource_group(vault.id)
         props = vault.properties
         tags = vault.tags or {}
         rows.append({

@@ -153,6 +153,7 @@ Azure SDK `.list()` methods return lazy iterators — wrap in `list()` to materi
 | Function | Purpose |
 |---|---|
 | `get_azure_client(service, sub_id)` | Client factory — never call mgmt clients directly |
+| `list_subscription_wide(ops, *names)` | First existing subscription-wide list method on an operation group (`list` / `list_by_subscription` naming drifts across majors); raises `AttributeError` naming every method tried — never fall back to a per-RG scan |
 | `detect_environment()` | Returns `'public'` or `'government'` |
 | `is_service_available_in_environment(svc, env)` | Guard for gov-restricted services |
 | `setup_logging(script_name)` | Call once at script start |

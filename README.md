@@ -149,6 +149,9 @@ Individual exporters also support CI mode:
 STRATUSSCAN_AUTO_RUN=1 python scripts/virtual_machines_export.py
 ```
 
+`STRATUSSCAN_APPSERVICE_CONFIG=1` makes `app_service_export.py` and `function_apps_export.py` read each app's site configuration (runtime stack, TLS, FTPS) with one extra `get_configuration` call per app; off by default because it is N+1 against the ARM request budget.
+`STRATUSSCAN_STORAGE_LIST_PACE_S=<seconds>` spaces the per-account list calls in `blob_containers_export.py` and `file_shares_export.py` (default 0) for subscriptions that hit the Storage resource provider's 100 list operations per 5 minutes per region.
+
 ---
 
 ## Usage

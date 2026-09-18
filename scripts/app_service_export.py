@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
-"""StratusScanCLI-Azure — App Service / Web Apps Export"""
+"""StratusScanCLI-Azure — App Service / Web Apps Export
 
+web_apps.list does not return siteConfig, so the runtime / TLS / FTPS columns are
+blank by default. STRATUSSCAN_APPSERVICE_CONFIG=1 adds one
+web_apps.get_configuration call per app to fill them (N+1 against the ARM
+request budget; an app whose configuration read fails is recorded, PARTIAL).
+"""
+
+import os
 import sys
 from pathlib import Path
 
@@ -11,18 +18,34 @@ except ImportError:
     import utils
 
 import pandas as pd
+from azure.core.exceptions import HttpResponseError
 
 utils.setup_logging("app-service-export")
 utils.log_script_start("app_service_export.py", "Azure App Service / Web Apps Export")
 
 log = utils.get_logger()
 
+CONFIG_ENV = "STRATUSSCAN_APPSERVICE_CONFIG"
 
-def collect_web_apps(subscription_id: str) -> list:
-    client = utils.get_azure_client("web", subscription_id)
-    log.info("Listing all web apps in subscription %s", subscription_id)
+
+def config_lookup_enabled() -> bool:
+    return os.environ.get(CONFIG_ENV, "").strip() == "1"
+
+
+def collect_web_apps(client) -> list:
+    log.info("Listing all web apps in subscription")
     all_sites = list(client.web_apps.list())
     return [s for s in all_sites if not (s.kind and "functionapp" in s.kind.lower())]
+
+
+def fetch_site_config(client, app, errors: list):
+    rg = app.resource_group or utils.extract_resource_group(app.id)
+    try:
+        return client.web_apps.get_configuration(rg, app.name)
+    except HttpResponseError as exc:
+        errors.append(utils.error_record(utils.s(app.name), "web_apps.get_configuration", exc))
+        log.warning("Could not read site configuration for %s: %s", app.name, exc)
+        return None
 
 
 def site_config_columns(site_config) -> dict:
@@ -44,9 +67,9 @@ def site_config_columns(site_config) -> dict:
     }
 
 
-def _build_row(app) -> dict:
+def _build_row(app, site_config=None) -> dict:
     tags = app.tags or {}
-    config = site_config_columns(app.site_config)
+    config = site_config_columns(site_config if site_config is not None else app.site_config)
     return {
         "Name": app.name,
         "Resource Group": app.resource_group or utils.extract_resource_group(app.id),
@@ -70,23 +93,32 @@ def _build_row(app) -> dict:
     }
 
 
+def build_rows(client, apps: list, errors: list) -> list:
+    if not config_lookup_enabled():
+        return [_build_row(app) for app in apps]
+    log.info("%s=1: reading site configuration for %d web app(s)", CONFIG_ENV, len(apps))
+    return [_build_row(app, fetch_site_config(client, app, errors)) for app in apps]
+
+
 def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("web", environment):
         sys.exit(0)
 
-    apps = collect_web_apps(subscription_id)
+    client = utils.get_azure_client("web", subscription_id)
+    apps = collect_web_apps(client)
     if not apps:
         raise utils.NoResourcesFound("App Service web apps")
 
-    rows = [_build_row(app) for app in apps]
+    errors: list = []
+    rows = build_rows(client, apps, errors)
 
     df = pd.DataFrame(rows)
     filename = utils.create_export_filename(subscription_name, "app-service", "all")
-    utils.save_dataframe_to_excel(df, filename, sheet_name="App Service")
+    utils.save_dataframe_to_excel(df, filename, sheet_name="App Service", errors=errors)
     print(f"Exported {len(rows)} web app(s) → {filename}")
     log.info("Export complete: %d web apps", len(rows))
-    return utils.ExportResult(rows=len(rows), filename=filename, errors=[])
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=errors)
 
 
 if __name__ == "__main__":

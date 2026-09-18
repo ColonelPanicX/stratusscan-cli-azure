@@ -60,22 +60,17 @@ def _access_code(exc: HttpResponseError) -> str:
 
 
 def collect_vault_uris(subscription_id: str) -> tuple:
-    """Return ([(vault_name, vault_uri)], errors); a vault whose detail read fails is recorded, not dropped."""
+    """Return ([(vault_name, vault_uri)], errors); list_by_subscription carries vaultUri, so no per-vault get."""
     client = utils.get_azure_client("keyvault", subscription_id)
     log.info("Listing all key vaults in subscription %s", subscription_id)
     uris = []
     errors: list = []
-    for vault_ref in client.vaults.list():
-        rg = utils.extract_resource_group(vault_ref.id)
-        try:
-            vault = client.vaults.get(rg, vault_ref.name)
-        except HttpResponseError as exc:
-            errors.append(utils.error_record(utils.s(vault_ref.name), "vaults.get", exc))
-            log.warning("Could not get vault detail for %s: %s", vault_ref.name, exc)
-            continue
+    for vault in client.vaults.list_by_subscription():
         uri = vault.properties.vault_uri if vault.properties else ""
         if uri:
-            uris.append((vault_ref.name, uri))
+            uris.append((vault.name, uri))
+        else:
+            log.warning("Vault %s listed without a vaultUri; data-plane objects skipped", vault.name)
     return uris, errors
 
 

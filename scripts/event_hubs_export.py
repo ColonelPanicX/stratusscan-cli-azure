@@ -11,7 +11,6 @@ except ImportError:
     import utils
 
 import pandas as pd
-from azure.core.exceptions import HttpResponseError
 
 utils.setup_logging("event-hubs-export")
 utils.log_script_start("event_hubs_export.py", "Event Hubs Namespaces Export")
@@ -19,22 +18,10 @@ utils.log_script_start("event_hubs_export.py", "Event Hubs Namespaces Export")
 log = utils.get_logger()
 
 
-def collect_namespaces(subscription_id: str) -> tuple:
+def collect_namespaces(subscription_id: str) -> list:
     client = utils.get_azure_client("eventhub", subscription_id)
     log.info("Listing Event Hubs namespaces in subscription %s", subscription_id)
-    if hasattr(client.namespaces, "list_by_subscription"):
-        return list(client.namespaces.list_by_subscription()), []
-
-    resource = utils.get_azure_client("resource", subscription_id)
-    namespaces = []
-    errors: list = []
-    for rg in resource.resource_groups.list():
-        try:
-            namespaces.extend(client.namespaces.list_by_resource_group(rg.name))
-        except HttpResponseError as exc:
-            errors.append(utils.error_record(rg.name, "namespaces.list_by_resource_group", exc))
-            log.warning("Failed to list Event Hubs namespaces in %s: %s", rg.name, exc)
-    return namespaces, errors
+    return list(utils.list_subscription_wide(client.namespaces, "list", "list_by_subscription"))
 
 
 def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
@@ -42,10 +29,11 @@ def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     if not utils.is_service_available_in_environment("eventhub", environment):
         sys.exit(0)
 
-    namespaces, errors = collect_namespaces(subscription_id)
-    if not namespaces and not errors:
+    namespaces = collect_namespaces(subscription_id)
+    if not namespaces:
         raise utils.NoResourcesFound("Event Hubs namespaces")
 
+    errors: list = []
     rows = []
     for ns in namespaces:
         sku = ns.sku

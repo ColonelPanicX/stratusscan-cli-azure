@@ -200,6 +200,28 @@ def extract_resource_group(resource_id: Optional[str]) -> str:
     return ""
 
 
+def list_subscription_wide(operations: Any, *method_names: str) -> Any:
+    """
+    Return the lazy paged result of the first subscription-wide list method the
+    operation group exposes; the caller materializes it with list().
+
+    The azure-mgmt-* packages disagree on what the subscription-wide listing is
+    called (list / list_by_subscription / list_all) and rename it across majors.
+    Raises AttributeError naming every method tried so a renamed method fails
+    loudly instead of degrading into a per-resource-group scan.
+    """
+    if not method_names:
+        raise ValueError("list_subscription_wide needs at least one method name")
+    for name in method_names:
+        method = getattr(operations, name, None)
+        if callable(method):
+            return method()
+    raise AttributeError(
+        f"{type(operations).__name__} has none of the subscription-wide list methods "
+        f"tried: {', '.join(method_names)}"
+    )
+
+
 def _output_dir() -> Path:
     out_dir = Path(__file__).parent / "output"
     out_dir.mkdir(exist_ok=True)
