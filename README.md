@@ -21,7 +21,7 @@
 
 ---
 
-A Python CLI tool for exporting Azure resource inventories to Excel workbooks. 70 exporters across Public and US Government cloud environments, targeting infrastructure audits, FedRAMP evidence collection, and cost analysis.
+A Python CLI tool for exporting Azure resource inventories to Excel workbooks. 75 exporters across Public and US Government cloud environments, targeting infrastructure audits, FedRAMP evidence collection, and cost analysis.
 
 Sibling project to [StratusScan-CLI (AWS)](https://github.com/ColonelPanicX/StratusScan-CLI). Shares the same philosophy, output format, and architectural patterns — not a fork.
 
@@ -280,7 +280,7 @@ python scripts/role_assignments_export.py
 | `batch_accounts_export.py` | Batch Accounts |
 | `recovery_services_vaults_export.py` | Recovery Services Vaults |
 
-### Governance (11 exporters)
+### Governance (14 exporters)
 
 | Script | Azure Service |
 |---|---|
@@ -288,15 +288,18 @@ python scripts/role_assignments_export.py
 | `management_groups_export.py` | Management Groups |
 | `defender_scores_export.py` | Defender Secure Scores & Plans |
 | `defender_assessments_export.py` | Defender Assessments |
+| `defender_alerts_export.py` | Defender Security Alerts |
+| `regulatory_compliance_export.py` | Regulatory Compliance |
 | `advisor_export.py` | Advisor Recommendations |
 | `resource_locks_export.py` | Resource Locks |
 | `resource_tags_export.py` | Resource Tags Inventory |
 | `policy_definitions_export.py` | Custom Policy Definitions |
 | `policy_compliance_export.py` | Policy Compliance State |
+| `role_definitions_export.py` | RBAC Role Definitions |
 | `managed_identities_export.py` | Managed Identities |
 | `cost_management_export.py` | Cost Management (Month-to-Date) |
 
-### Monitoring (5 exporters)
+### Monitoring (7 exporters)
 
 | Script | Azure Service |
 |---|---|
@@ -304,6 +307,8 @@ python scripts/role_assignments_export.py
 | `action_groups_export.py` | Action Groups |
 | `log_analytics_export.py` | Log Analytics Workspaces |
 | `diagnostic_settings_export.py` | Diagnostic Settings (audit) |
+| `activity_log_settings_export.py` | Activity Log Export Settings |
+| `flow_logs_export.py` | Network Watcher Flow Logs |
 | `application_insights_export.py` | Application Insights |
 
 ---
@@ -404,7 +409,7 @@ python -c "from azure.identity import DefaultAzureCredential; DefaultAzureCreden
 
 **Current version: 0.1.0-alpha** — pre-alpha, not production-ready.
 
-All 70 exporters are written and the architecture is in place. Tier 1 has been
+All 75 exporters are written and the architecture is in place. Tier 1 has been
 validated against live Azure Government subscriptions; Tier 2, Governance and
 Monitoring have not. The first release will be cut once end-to-end validation is
 complete.
@@ -413,7 +418,7 @@ complete.
 
 | Version | Target |
 |---|---|
-| `0.1.0` | First stable release — 70 exporters validated, Public + Government environments |
+| `0.1.0` | First stable release — 75 exporters validated, Public + Government environments |
 | `0.2.0` | Resource Graph Smart Scan, Entra ID exporters (Microsoft Graph SDK), pricing data |
 | `0.3.0+` | Multi-tenant scanning, Textual TUI |
 

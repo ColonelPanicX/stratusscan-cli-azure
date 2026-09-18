@@ -109,11 +109,14 @@ GOVERNANCE_EXPORTERS = [
     ("Management Groups",              "management_groups_export.py"),
     ("Defender Secure Scores & Plans", "defender_scores_export.py"),
     ("Defender Assessments",           "defender_assessments_export.py"),
+    ("Defender Security Alerts",       "defender_alerts_export.py"),
+    ("Regulatory Compliance",          "regulatory_compliance_export.py"),
     ("Advisor Recommendations",        "advisor_export.py"),
     ("Resource Locks",                 "resource_locks_export.py"),
     ("Resource Tags Inventory",        "resource_tags_export.py"),
     ("Custom Policy Definitions",      "policy_definitions_export.py"),
     ("Policy Compliance State",        "policy_compliance_export.py"),
+    ("RBAC Role Definitions",          "role_definitions_export.py"),
     ("Managed Identities",             "managed_identities_export.py"),
     ("Cost Management (Month-to-Date)", "cost_management_export.py"),
 ]
@@ -123,6 +126,8 @@ MONITORING_EXPORTERS = [
     ("Action Groups",                  "action_groups_export.py"),
     ("Log Analytics Workspaces",       "log_analytics_export.py"),
     ("Diagnostic Settings (audit)",    "diagnostic_settings_export.py"),
+    ("Activity Log Export Settings",   "activity_log_settings_export.py"),
+    ("Network Watcher Flow Logs",      "flow_logs_export.py"),
     ("Application Insights",           "application_insights_export.py"),
 ]
 
