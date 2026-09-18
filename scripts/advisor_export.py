@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """StratusScanCLI-Azure — Azure Advisor Recommendations Export"""
 
+import json
+import re
 import sys
 from pathlib import Path
 
@@ -17,22 +19,49 @@ utils.log_script_start("advisor_export.py", "Azure Advisor Recommendations Expor
 
 log = utils.get_logger()
 
+_RECOMMENDATION_SUFFIX = re.compile(
+    r"/providers/Microsoft\.Advisor/recommendations/[^/]+/?$", re.IGNORECASE
+)
+
 
 def _parse_resource_id(resource_id: str) -> tuple:
-    if not resource_id:
-        return "", ""
-    parts = resource_id.split("/")
-    rname = parts[-1] if len(parts) > 1 else ""
-    rtype = ""
-    for i, p in enumerate(parts):
-        if p.lower() == "providers" and i + 2 < len(parts):
-            rtype = "/".join(parts[i + 1 : i + 3])
-            break
-    return rname, rtype
+    """Return (name, type) for an ARM resource ID, e.g. ("d1", "Microsoft.Sql/servers/databases").
+
+    The last `providers` segment wins, so extension and nested child resources resolve to
+    their own type. Subscription and resource group scopes carry no `providers` segment.
+    """
+    parts = [p for p in (resource_id or "").split("/") if p]
+    lowered = [p.lower() for p in parts]
+
+    if "providers" in lowered:
+        start = len(lowered) - lowered[::-1].index("providers")
+        namespace, segments = parts[start : start + 1], parts[start + 1 :]
+        if not namespace or not segments:
+            return "", ""
+        rtype = "/".join(namespace + segments[0::2])
+        rname = segments[-1] if len(segments) % 2 == 0 else ""
+        return rname, rtype
+
+    if len(parts) == 2 and lowered[0] == "subscriptions":
+        return parts[1], "Microsoft.Resources/subscriptions"
+    if len(parts) == 4 and lowered[0] == "subscriptions" and lowered[2] == "resourcegroups":
+        return parts[3], "Microsoft.Resources/subscriptions/resourceGroups"
+    return "", ""
 
 
-_MONTHLY_SAVINGS_KEYS = ("savingsAmount", "monthlySavingsAmount")
-_ANNUAL_SAVINGS_KEYS = ("annualSavingsAmount", "estimatedAnnualSavings")
+def _resolve_resource_id(rec) -> str:
+    """Assessed resource ID, else the scope the recommendation ID hangs off, else blank.
+
+    `impacted_field` is a resource type, never an ID — it must not be used here.
+    """
+    metadata = getattr(rec, "resource_metadata", None)
+    resource_id = getattr(metadata, "resource_id", None) or ""
+    if resource_id:
+        return resource_id
+
+    rec_id = getattr(rec, "id", None) or ""
+    scope, matched = _RECOMMENDATION_SUFFIX.subn("", rec_id)
+    return scope if matched else ""
 
 
 def _to_number(value):
@@ -45,12 +74,7 @@ def _to_number(value):
         return ""
 
 
-def _first_number(extended_properties: dict, keys):
-    for key in keys:
-        number = _to_number(extended_properties.get(key))
-        if number != "":
-            return number
-    return ""
+_REGION_KEYS = ("region", "Region", "location")
 
 
 def _extract_savings(extended_properties: dict) -> dict:
@@ -71,12 +95,12 @@ def _extract_savings(extended_properties: dict) -> dict:
     if not extended_properties:
         return blank
 
-    monthly = _first_number(extended_properties, _MONTHLY_SAVINGS_KEYS)
-    annual = _first_number(extended_properties, _ANNUAL_SAVINGS_KEYS)
+    monthly = _to_number(extended_properties.get("savingsAmount"))
+    annual = _to_number(extended_properties.get("annualSavingsAmount"))
 
     currency = ""
     if monthly != "" or annual != "":
-        currency = extended_properties.get("savingsCurrency") or "USD"
+        currency = extended_properties.get("savingsCurrency") or ""
 
     lookback = extended_properties.get("lookbackPeriod") or ""
     lookback_number = _to_number(lookback)
@@ -87,8 +111,39 @@ def _extract_savings(extended_properties: dict) -> dict:
         "Savings Currency": currency,
         "Reservation Term": extended_properties.get("term") or "",
         "Lookback (days)": lookback_number if lookback_number != "" else lookback,
-        "Region": extended_properties.get("region") or "",
+        "Region": next(
+            (extended_properties[k] for k in _REGION_KEYS if extended_properties.get(k)), ""
+        ),
     }
+
+
+def _build_row(rec) -> dict:
+    resource_id = _resolve_resource_id(rec)
+    parsed_name, parsed_type = _parse_resource_id(resource_id)
+
+    extended = getattr(rec, "extended_properties", None) or {}
+    short_desc = getattr(rec, "short_description", None)
+
+    last_updated = getattr(rec, "last_updated", "") or ""
+    if hasattr(last_updated, "isoformat"):
+        last_updated = last_updated.isoformat()
+
+    row = {
+        "Category": utils.s(getattr(rec, "category", None)),
+        "Impact": utils.s(getattr(rec, "impact", None)),
+        "Resource ID": resource_id,
+        "Resource Name": getattr(rec, "impacted_value", None) or parsed_name,
+        "Resource Type": getattr(rec, "impacted_field", None) or parsed_type,
+        "Recommendation": getattr(short_desc, "problem", None) or "",
+        "Solution": getattr(short_desc, "solution", None) or "",
+    }
+    row.update(_extract_savings(extended))
+    row["Last Updated"] = last_updated
+    row["Recommendation Type ID"] = utils.s(getattr(rec, "recommendation_type_id", None))
+    row["Extended Properties (JSON)"] = (
+        json.dumps(extended, sort_keys=True, default=str) if extended else ""
+    )
+    return row
 
 
 def collect_recommendations(subscription_id: str) -> list:
@@ -98,33 +153,7 @@ def collect_recommendations(subscription_id: str) -> list:
     rows = []
     try:
         for rec in client.recommendations.list():
-            resource_id = getattr(rec, "resource_id", "") or getattr(rec, "impacted_field", "") or ""
-            rname, rtype = _parse_resource_id(resource_id)
-
-            extended = getattr(rec, "extended_properties", None) or {}
-            short_desc = getattr(rec, "short_description", None)
-            problem = ""
-            solution = ""
-            if short_desc:
-                problem = getattr(short_desc, "problem", "") or ""
-                solution = getattr(short_desc, "solution", "") or ""
-
-            last_updated = getattr(rec, "last_updated", "") or ""
-            if hasattr(last_updated, "isoformat"):
-                last_updated = last_updated.isoformat()
-
-            row = {
-                "Category": getattr(rec, "category", "") or "",
-                "Impact": getattr(rec, "impact", "") or "",
-                "Resource ID": resource_id,
-                "Resource Name": rname or getattr(rec, "impacted_value", "") or "",
-                "Resource Type": rtype or getattr(rec, "impacted_field", "") or "",
-                "Recommendation": problem,
-                "Solution": solution,
-            }
-            row.update(_extract_savings(extended))
-            row["Last Updated"] = last_updated
-            rows.append(row)
+            rows.append(_build_row(rec))
     except Exception as e:
         log.warning("Failed to list Advisor recommendations: %s", e)
 
