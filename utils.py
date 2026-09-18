@@ -809,6 +809,12 @@ _CLIENT_MAP: dict[str, tuple] = {
     "automation": ("azure.mgmt.automation", "AutomationClient", True),
     "batch": ("azure.mgmt.batch", "BatchManagementClient", True),
     "recoveryservices": ("azure.mgmt.recoveryservices", "RecoveryServicesClient", True),
+    "recoveryservicesbackup": (
+        "azure.mgmt.recoveryservicesbackup", "RecoveryServicesBackupClient", True,
+    ),
+    "cognitiveservices": (
+        "azure.mgmt.cognitiveservices", "CognitiveServicesManagementClient", True,
+    ),
     "applicationinsights": ("azure.mgmt.applicationinsights", "ApplicationInsightsManagementClient", True),
 }
 

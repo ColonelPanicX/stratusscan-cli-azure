@@ -482,3 +482,591 @@ def test_regulatory_compliance_without_standards_is_no_resources_found(monkeypat
     _patch_client(monkeypatch, regulatory_compliance_export, _FakeSecurity([], lambda name: []))
     with pytest.raises(regulatory_compliance_export.utils.NoResourcesFound):
         regulatory_compliance_export.main("00000000-0000-0000-0000-000000000001", "Sub")
+
+
+# =================================================================================
+# SSAZR-120 slice 2
+# =================================================================================
+
+import app_service_plans_export  # noqa: E402
+import backup_items_export  # noqa: E402
+import cognitive_services_export  # noqa: E402
+import disk_encryption_sets_export  # noqa: E402
+import waf_policies_export  # noqa: E402
+
+_VAULT_ID = f"{_SUB}/resourceGroups/rg1/providers/Microsoft.RecoveryServices/vaults/vault1"
+_DES_ID = f"{_SUB}/resourceGroups/rg1/providers/Microsoft.Compute/diskEncryptionSets/des1"
+
+
+def _patch_client_by_service(monkeypatch, module, clients):
+    monkeypatch.setattr(
+        module.utils, "get_azure_client", lambda service, sub_id=None: clients[service]
+    )
+
+
+# --- backup items ----------------------------------------------------------------
+
+
+def _backup_model(class_name, payload):
+    models = pytest.importorskip("azure.mgmt.recoveryservicesbackup.models")
+    return getattr(models, class_name)(payload)
+
+
+def _vault(name="vault1", **properties):
+    props = {
+        "provisioningState": "Succeeded",
+        "publicNetworkAccess": "Enabled",
+        "redundancySettings": {
+            "standardTierStorageRedundancy": "GeoRedundant",
+            "crossRegionRestore": "Enabled",
+        },
+        "securitySettings": {
+            "immutabilitySettings": {"state": "Unlocked"},
+            "multiUserAuthorization": "Enabled",
+            "softDeleteSettings": {
+                "softDeleteState": "Enabled", "softDeleteRetentionPeriodInDays": 14,
+            },
+        },
+        "encryption": {
+            "keyVaultProperties": {"keyUri": "https://kv1.vault.azure.net/keys/k1/v1"},
+            "infrastructureEncryption": "Enabled",
+            "kekIdentity": {"useSystemAssignedIdentity": True},
+        },
+    }
+    props.update(properties)
+    models = pytest.importorskip("azure.mgmt.recoveryservices.models")
+    return models.Vault({
+        "id": _VAULT_ID.replace("vault1", name), "name": name, "location": "eastus",
+        "sku": {"name": "RS0", "tier": "Standard"}, "properties": props,
+    })
+
+
+class _FakeBackup:
+    """Vault-scoped child listings; names in `failures` raise instead of answering."""
+
+    def __init__(self, items=(), policies=(), config=None, failures=()):
+        self._items = list(items)
+        self._policies = list(policies)
+        self._config = config
+        self._failures = set(failures)
+        self.calls = []
+        self.backup_protected_items = SimpleNamespace(list=self._list_items)
+        self.backup_policies = SimpleNamespace(list=self._list_policies)
+        self.backup_resource_vault_configs = SimpleNamespace(get=self._get_config)
+
+    def _answer(self, operation, vault_name, resource_group_name):
+        self.calls.append((operation, vault_name, resource_group_name))
+        if operation in self._failures:
+            raise _http_error("AuthorizationFailed", 403)
+
+    def _list_items(self, vault_name, resource_group_name):
+        self._answer("items", vault_name, resource_group_name)
+        return iter(self._items)
+
+    def _list_policies(self, vault_name, resource_group_name):
+        self._answer("policies", vault_name, resource_group_name)
+        return iter(self._policies)
+
+    def _get_config(self, vault_name, resource_group_name):
+        self._answer("config", vault_name, resource_group_name)
+        return self._config
+
+
+def _protected_item(name="vm;i1", item_type="Microsoft.Compute/virtualMachines", **overrides):
+    props = {
+        "protectedItemType": item_type,
+        "friendlyName": "vm1",
+        "protectionState": "Protected",
+        "protectionStatus": "Healthy",
+        "healthStatus": "Passed",
+        "lastBackupStatus": "Healthy",
+        "lastBackupTime": "2026-09-01T02:00:00Z",
+        "lastRecoveryPoint": "2026-09-01T02:30:00Z",
+        "policyName": "DefaultPolicy",
+        "backupManagementType": "AzureIaasVM",
+        "workloadType": "VM",
+        "containerName": "iaasvmcontainerv2;rg1;vm1",
+        "sourceResourceId": _VM_ID,
+        "isArchiveEnabled": False,
+        "isScheduledForDeferredDelete": False,
+        "softDeleteRetentionPeriodInDays": 14,
+    }
+    props.update(overrides)
+    return _backup_model("ProtectedItemResource", {"name": name, "properties": props})
+
+
+def _protection_policy(name="DefaultPolicy"):
+    return _backup_model("ProtectionPolicyResource", {"name": name, "properties": {
+        "backupManagementType": "AzureIaasVM", "policyType": "V2", "timeZone": "UTC",
+        "protectedItemsCount": 3, "instantRpRetentionRangeInDays": 2,
+        "schedulePolicy": {"schedulePolicyType": "SimpleSchedulePolicy",
+                           "scheduleRunFrequency": "Daily",
+                           "scheduleRunTimes": ["2026-09-01T18:30:00Z"]},
+        "retentionPolicy": {
+            "retentionPolicyType": "LongTermRetentionPolicy",
+            "dailySchedule": {"retentionDuration": {"count": 30, "durationType": "Days"}},
+            "weeklySchedule": {"daysOfTheWeek": ["Sunday"],
+                               "retentionDuration": {"count": 12, "durationType": "Weeks"}},
+            "monthlySchedule": {"retentionDuration": {"count": 60, "durationType": "Months"}},
+            "yearlySchedule": {"monthsOfYear": ["January"],
+                               "retentionDuration": {"count": 10, "durationType": "Years"}},
+        },
+    }})
+
+
+def _vault_config():
+    return _backup_model("BackupResourceVaultConfigResource", {"name": "vaultconfig", "properties": {
+        "storageType": "GeoRedundant", "storageTypeState": "Locked",
+        "softDeleteFeatureState": "Enabled", "softDeleteRetentionPeriodInDays": 14,
+        "enhancedSecurityState": "Enabled",
+    }})
+
+
+def test_backup_item_row_resolves_the_nested_protected_item_discriminator():
+    row = backup_items_export.build_item_row(_protected_item(), "vault1", "rg1")
+    assert row["Friendly Name"] == "vm1"
+    assert row["Protection State"] == "Protected"
+    assert row["Protection Status"] == "Healthy"
+    assert row["Health Status"] == "Passed"
+    assert row["Last Backup Status"] == "Healthy"
+    assert row["Last Backup Time"] == "2026-09-01 02:00:00"
+    assert row["Latest Recovery Point"] == "2026-09-01 02:30:00"
+    assert row["Policy Name"] == "DefaultPolicy"
+    assert row["Protected Item Type"] == "Microsoft.Compute/virtualMachines"
+    assert row["Source Resource ID"] == _VM_ID
+    assert row["Archive Enabled"] == "No"
+
+
+def test_backup_item_row_reads_a_first_level_subtype_unchanged():
+    row = backup_items_export.build_item_row(
+        _protected_item(name="fs;i2", item_type="AzureFileShareProtectedItem",
+                        backupManagementType="AzureStorage", workloadType="AzureFileShare"),
+        "vault1", "rg1",
+    )
+    assert row["Friendly Name"] == "vm1"
+    assert row["Backup Management Type"] == "AzureStorage"
+
+
+def test_backup_policy_row_carries_schedule_and_every_retention_tier():
+    row = backup_items_export.build_policy_row(_protection_policy(), "vault1", "rg1")
+    assert row["Schedule"] == "Daily | 2026-09-01 18:30:00"
+    assert row["Daily Retention"] == "30 Days"
+    assert row["Weekly Retention"] == "12 Weeks | Sunday"
+    assert row["Monthly Retention"] == "60 Months"
+    assert row["Yearly Retention"] == "10 Years | January"
+    assert row["Instant Restore Retention (days)"] == "2"
+    assert row["Protected Items Count"] == "3"
+
+
+def test_backup_vault_row_reports_redundancy_soft_delete_immutability_and_cmk():
+    client = _FakeBackup(items=[_protected_item()], policies=[_protection_policy()],
+                          config=_vault_config())
+    vault_rows, item_rows, policy_rows = backup_items_export.collect_vault_children(
+        client, [_vault()], []
+    )
+    (row,) = vault_rows
+    assert row["Name"] == "vault1" and row["Resource Group"] == "rg1"
+    assert row["Storage Type"] == "GeoRedundant"
+    assert row["Cross Region Restore"] == "Enabled"
+    assert row["Soft Delete State"] == "Enabled"
+    assert row["Soft Delete Retention (days)"] == "14"
+    assert row["Immutability State"] == "Unlocked"
+    assert row["Encryption Key Source"] == "Microsoft.KeyVault"
+    assert row["Encryption Key URI"] == "https://kv1.vault.azure.net/keys/k1/v1"
+    assert row["Encryption Identity"] == "SystemAssigned"
+    assert row["Protected Items"] == 1 and row["Policies"] == 1
+    assert len(item_rows) == 1 and len(policy_rows) == 1
+
+
+def test_backup_vault_without_children_still_produces_a_vault_row():
+    client = _FakeBackup(config=_vault_config())
+    vault_rows, item_rows, policy_rows = backup_items_export.collect_vault_children(
+        client, [_vault()], []
+    )
+    assert len(vault_rows) == 1 and item_rows == [] and policy_rows == []
+
+
+def test_backup_per_vault_error_is_recorded_and_the_run_continues():
+    client = _FakeBackup(policies=[_protection_policy()], config=_vault_config(),
+                          failures=("items",))
+    errors = []
+    vault_rows, item_rows, policy_rows = backup_items_export.collect_vault_children(
+        client, [_vault()], errors
+    )
+    assert item_rows == [] and len(policy_rows) == 1 and len(vault_rows) == 1
+    assert [(e["Scope"], e["Operation"], e["Error Code"]) for e in errors] == [
+        (_VAULT_ID, "backup_protected_items.list", "AuthorizationFailed")
+    ]
+
+
+def test_backup_vault_config_error_falls_back_to_the_vault_resource():
+    client = _FakeBackup(config=_vault_config(), failures=("config",))
+    errors = []
+    (row,), _, _ = backup_items_export.collect_vault_children(client, [_vault()], errors)
+    assert [e["Operation"] for e in errors] == ["backup_resource_vault_configs.get"]
+    assert row["Soft Delete State"] == "Enabled"
+    assert row["Storage Type"] == "GeoRedundant"
+
+
+def test_backup_items_without_vaults_is_no_resources_found(monkeypatch):
+    clients = {
+        "recoveryservices": SimpleNamespace(
+            vaults=SimpleNamespace(list_by_subscription_id=lambda: iter(()))
+        ),
+        "recoveryservicesbackup": _FakeBackup(),
+    }
+    _patch_client_by_service(monkeypatch, backup_items_export, clients)
+    with pytest.raises(backup_items_export.utils.NoResourcesFound):
+        backup_items_export.main("00000000-0000-0000-0000-000000000001", "Sub")
+
+
+# --- WAF policies ----------------------------------------------------------------
+
+
+def _sdk_waf_policy(name="waf1", mode="Prevention", custom_rules=None, **properties):
+    models = pytest.importorskip("azure.mgmt.network.models")
+    props = {
+        "policySettings": {
+            "mode": mode, "state": "Enabled", "requestBodyCheck": True,
+            "maxRequestBodySizeInKb": 128, "fileUploadLimitInMb": 100,
+        },
+        "managedRules": {"managedRuleSets": [
+            {"ruleSetType": "OWASP", "ruleSetVersion": "3.2"},
+            {"ruleSetType": "Microsoft_BotManagerRuleSet", "ruleSetVersion": "1.0"},
+        ]},
+        "customRules": custom_rules if custom_rules is not None else [{
+            "name": "BlockCH", "priority": 10, "ruleType": "MatchRule", "action": "Block",
+            "state": "Enabled", "rateLimitThreshold": 100, "rateLimitDuration": "OneMin",
+            "matchConditions": [{
+                "matchVariables": [{"variableName": "RequestHeader", "selector": "User-Agent"}],
+                "operator": "Contains", "negationConditon": False,
+                "matchValues": ["badbot"], "transforms": ["Lowercase"],
+            }],
+        }],
+        "applicationGateways": [{
+            "id": f"{_SUB}/resourceGroups/rg1/providers/Microsoft.Network"
+                  "/applicationGateways/agw1",
+            "name": "agw1", "location": "eastus",
+        }],
+        "httpListeners": [{"id": f"{_SUB}/resourceGroups/rg1/providers/Microsoft.Network"
+                                 "/applicationGateways/agw1/httpListeners/listener1"}],
+        "pathBasedRules": [],
+        "resourceState": "Enabled",
+        "provisioningState": "Succeeded",
+    }
+    props.update(properties)
+    return models.WebApplicationFirewallPolicy({
+        "id": f"{_SUB}/resourceGroups/rg1/providers/Microsoft.Network"
+              f"/ApplicationGatewayWebApplicationFirewallPolicies/{name}",
+        "name": name, "location": "eastus", "tags": {"env": "prod"}, "properties": props,
+    })
+
+
+def test_waf_policy_row_from_a_real_sdk_model():
+    row = waf_policies_export.build_policy_row(_sdk_waf_policy())
+    assert row["Name"] == "waf1" and row["Resource Group"] == "rg1"
+    assert row["Policy Type"] == "Application Gateway"
+    assert row["Mode"] == "Prevention" and row["State"] == "Enabled"
+    assert row["Request Body Check"] == "Yes"
+    assert row["Max Request Body Size (KB)"] == "128"
+    assert row["File Upload Limit (MB)"] == "100"
+    assert row["Managed Rule Sets"] == "OWASP 3.2, Microsoft_BotManagerRuleSet 1.0"
+    assert row["Managed Rule Set Count"] == 2
+    assert row["Custom Rule Count"] == 1
+    assert row["Associated Application Gateways"] == "agw1"
+    assert row["Associated Listeners"] == "listener1"
+    assert row["Provisioning State"] == "Succeeded"
+    assert row["Tags"] == "env=prod"
+
+
+def test_waf_detection_mode_is_reported_verbatim():
+    assert waf_policies_export.build_policy_row(_sdk_waf_policy(mode="Detection"))["Mode"] == "Detection"
+
+
+def test_waf_custom_rule_rows_summarize_their_match_conditions():
+    (row,) = waf_policies_export.build_custom_rule_rows(_sdk_waf_policy())
+    assert row["Policy"] == "waf1" and row["Rule Name"] == "BlockCH"
+    assert row["Priority"] == "10" and row["Action"] == "Block" and row["State"] == "Enabled"
+    assert row["Rule Type"] == "MatchRule"
+    assert row["Match Conditions"] == (
+        "RequestHeader[User-Agent] Contains [badbot] (transforms: Lowercase)"
+    )
+    assert row["Rate Limit Threshold"] == "100"
+
+
+def test_waf_policy_without_custom_rules_yields_no_custom_rule_rows():
+    policy = _sdk_waf_policy(custom_rules=[])
+    assert waf_policies_export.build_custom_rule_rows(policy) == []
+    assert waf_policies_export.build_policy_row(policy)["Custom Rule Count"] == 0
+
+
+def test_waf_policies_empty_listing_is_no_resources_found(monkeypatch):
+    _patch_client(monkeypatch, waf_policies_export, SimpleNamespace(
+        web_application_firewall_policies=SimpleNamespace(list_all=lambda: iter(()))
+    ))
+    with pytest.raises(waf_policies_export.utils.NoResourcesFound):
+        waf_policies_export.main("00000000-0000-0000-0000-000000000001", "Sub")
+
+
+# --- cognitive services ----------------------------------------------------------
+
+
+def _sdk_account(name="openai1", kind="OpenAI", **properties):
+    models = pytest.importorskip("azure.mgmt.cognitiveservices.models")
+    props = {
+        "endpoint": "https://openai1.openai.azure.com/",
+        "publicNetworkAccess": "Disabled",
+        "disableLocalAuth": True,
+        "customSubDomainName": "openai1",
+        "restrictOutboundNetworkAccess": True,
+        "allowedFqdnList": ["contoso.com"],
+        "provisioningState": "Succeeded",
+        "networkAcls": {
+            "defaultAction": "Deny", "bypass": "AzureServices",
+            "ipRules": [{"value": "1.2.3.4"}],
+            "virtualNetworkRules": [{"id": _SUBNET_ID}],
+        },
+        "encryption": {
+            "keySource": "Microsoft.KeyVault",
+            "keyVaultProperties": {
+                "keyName": "cmk1", "keyVaultUri": "https://kv1.vault.azure.net/",
+                "keyVersion": "v1",
+            },
+        },
+        "privateEndpointConnections": [{"id": "/pe1"}, {"id": "/pe2"}],
+    }
+    props.update(properties)
+    return models.Account.deserialize({
+        "id": f"{_SUB}/resourceGroups/rg1/providers/Microsoft.CognitiveServices/accounts/{name}",
+        "name": name, "location": "eastus", "kind": kind,
+        "sku": {"name": "S0", "tier": "Standard"},
+        "identity": {"type": "SystemAssigned",
+                     "principalId": "11111111-1111-1111-1111-111111111111"},
+        "tags": {"env": "prod"}, "properties": props,
+    })
+
+
+def test_cognitive_services_row_from_a_real_sdk_model():
+    row = cognitive_services_export.build_row(_sdk_account())
+    assert row["Name"] == "openai1" and row["Kind"] == "OpenAI"
+    assert row["Resource Group"] == "rg1" and row["SKU"] == "S0"
+    assert row["Endpoint"] == "https://openai1.openai.azure.com/"
+    assert row["Public Network Access"] == "Disabled"
+    assert row["Disable Local Auth"] == "Yes"
+    assert row["Custom Subdomain"] == "openai1"
+    assert row["Network ACL Default Action"] == "Deny"
+    assert row["IP Rule Count"] == 1 and row["VNet Rule Count"] == 1
+    assert row["Private Endpoint Count"] == 2
+    assert row["Encryption Key Source"] == "Microsoft.KeyVault"
+    assert row["Encryption Key Vault URI"] == "https://kv1.vault.azure.net/"
+    assert row["Identity Type"] == "SystemAssigned"
+    assert row["Restrict Outbound Network Access"] == "Yes"
+    assert row["Allowed FQDN Count"] == 1
+
+
+def test_cognitive_services_local_auth_left_blank_when_the_service_omits_it():
+    row = cognitive_services_export.build_row(_sdk_account(disableLocalAuth=None))
+    assert row["Disable Local Auth"] == ""
+
+
+def test_cognitive_services_never_calls_list_keys_and_exports_no_key_material():
+    source = Path(cognitive_services_export.__file__).read_text(encoding="utf-8")
+    assert "list_keys" not in source
+    assert "regenerate_key" not in source
+
+    class _KeysExplode:
+        def list(self):
+            return iter([_sdk_account()])
+
+        def list_keys(self, *args, **kwargs):
+            raise AssertionError("cognitive_services_export must never read account keys")
+
+    client = SimpleNamespace(accounts=_KeysExplode())
+    rows = [cognitive_services_export.build_row(a) for a in client.accounts.list()]
+    columns = set(cognitive_services_export.COLUMNS)
+    assert not any("key 1" in c.lower() or "key 2" in c.lower() or c.lower().endswith("key")
+                   for c in columns)
+    # The CMK columns are identifiers only: a vault URI and a key name, never a key value.
+    assert rows[0]["Encryption Key Vault URI"] == "https://kv1.vault.azure.net/"
+    assert rows[0]["Encryption Key Name"] == "cmk1"
+
+
+def test_cognitive_services_empty_listing_is_no_resources_found(monkeypatch):
+    _patch_client(monkeypatch, cognitive_services_export,
+                  SimpleNamespace(accounts=SimpleNamespace(list=lambda: iter(()))))
+    with pytest.raises(cognitive_services_export.utils.NoResourcesFound):
+        cognitive_services_export.main("00000000-0000-0000-0000-000000000001", "Sub")
+
+
+# --- app service plans -----------------------------------------------------------
+
+
+def _sdk_plan(name="plan1", tier="PremiumV3", sites=3, **properties):
+    models = pytest.importorskip("azure.mgmt.web.models")
+    props = {
+        "numberOfWorkers": 2, "maximumNumberOfWorkers": 30,
+        "maximumElasticWorkerCount": 1, "elasticScaleEnabled": False,
+        "reserved": True, "hyperV": False, "zoneRedundant": True,
+        "perSiteScaling": False, "numberOfSites": sites, "isSpot": False,
+        "status": "Ready", "provisioningState": "Succeeded",
+    }
+    props.update(properties)
+    return models.AppServicePlan({
+        "id": f"{_SUB}/resourceGroups/rg1/providers/Microsoft.Web/serverfarms/{name}",
+        "name": name, "location": "eastus", "kind": "linux", "tags": {"env": "prod"},
+        "sku": {"name": "P1v3", "tier": tier, "size": "P1v3", "family": "Pv3", "capacity": 2},
+        "properties": props,
+    })
+
+
+def test_app_service_plan_row_from_a_real_sdk_model():
+    row = app_service_plans_export.build_row(_sdk_plan())
+    assert row["Name"] == "plan1" and row["Resource Group"] == "rg1"
+    assert row["SKU Name"] == "P1v3" and row["SKU Tier"] == "PremiumV3"
+    assert row["SKU Size"] == "P1v3" and row["SKU Family"] == "Pv3"
+    assert row["SKU Capacity"] == "2" and row["Worker Count"] == "2"
+    assert row["Maximum Worker Count"] == "30"
+    assert row["Maximum Elastic Worker Count"] == "1"
+    assert row["Linux (Reserved)"] == "Yes" and row["Hyper-V"] == "No"
+    assert row["Zone Redundant"] == "Yes" and row["Per-Site Scaling"] == "No"
+    assert row["Number of Sites"] == "3" and row["Empty Plan"] == "No"
+    assert row["Free/Shared Tier (no SLA)"] == "No"
+    assert row["Status"] == "Ready" and row["Provisioning State"] == "Succeeded"
+
+
+def test_app_service_plan_free_and_shared_tiers_are_flagged():
+    assert app_service_plans_export.is_no_sla_tier("Free")
+    assert app_service_plans_export.is_no_sla_tier("shared")
+    assert not app_service_plans_export.is_no_sla_tier("Basic")
+    assert not app_service_plans_export.is_no_sla_tier("Dynamic")
+    row = app_service_plans_export.build_row(_sdk_plan(tier="Free", sites=0))
+    assert row["Free/Shared Tier (no SLA)"] == "Yes"
+    assert row["Empty Plan"] == "Yes"
+
+
+def test_app_service_plan_app_service_environment_name_is_carried():
+    row = app_service_plans_export.build_row(_sdk_plan(
+        hostingEnvironmentProfile={"id": "/ase1", "name": "ase1"}
+    ))
+    assert row["App Service Environment"] == "ase1"
+
+
+def test_app_service_plans_empty_listing_is_no_resources_found(monkeypatch):
+    _patch_client(monkeypatch, app_service_plans_export,
+                  SimpleNamespace(app_service_plans=SimpleNamespace(list=lambda: iter(()))))
+    with pytest.raises(app_service_plans_export.utils.NoResourcesFound):
+        app_service_plans_export.main("00000000-0000-0000-0000-000000000001", "Sub")
+
+
+# --- disk encryption sets --------------------------------------------------------
+
+
+def _sdk_encryption_set(name="des1", **properties):
+    models = pytest.importorskip("azure.mgmt.compute.models")
+    props = {
+        "encryptionType": "EncryptionAtRestWithCustomerKey",
+        "activeKey": {
+            "keyUrl": "https://kv1.vault.azure.net/keys/cmk1/abcdef",
+            "sourceVault": {"id": f"{_SUB}/resourceGroups/rg1/providers"
+                                  "/Microsoft.KeyVault/vaults/kv1"},
+        },
+        "previousKeys": [{"keyUrl": "https://kv1.vault.azure.net/keys/cmk1/000000"}],
+        "rotationToLatestKeyVersionEnabled": True,
+        "provisioningState": "Succeeded",
+        "federatedClientId": "None",
+    }
+    props.update(properties)
+    return models.DiskEncryptionSet({
+        "id": _DES_ID.replace("des1", name), "name": name, "location": "eastus",
+        "tags": {"env": "prod"},
+        "identity": {"type": "SystemAssigned",
+                     "principalId": "22222222-2222-2222-2222-222222222222"},
+        "properties": props,
+    })
+
+
+def _sdk_disk(name="disk1", set_id=_DES_ID):
+    models = pytest.importorskip("azure.mgmt.compute.models")
+    return models.Disk({"name": name, "location": "eastus",
+                        "properties": {"encryption": {"diskEncryptionSetId": set_id}}})
+
+
+def _sdk_snapshot(name="snap1", set_id=_DES_ID):
+    models = pytest.importorskip("azure.mgmt.compute.models")
+    return models.Snapshot({"name": name, "location": "eastus",
+                            "properties": {"encryption": {"diskEncryptionSetId": set_id}}})
+
+
+def _sdk_image(name="img1", set_id=_DES_ID):
+    models = pytest.importorskip("azure.mgmt.compute.models")
+    return models.Image({"name": name, "location": "eastus", "properties": {"storageProfile": {
+        "osDisk": {"osType": "Linux", "osState": "Generalized",
+                   "diskEncryptionSet": {"id": set_id}},
+        "dataDisks": [{"lun": 0, "diskEncryptionSet": {"id": set_id}}],
+    }}})
+
+
+class _FakeCompute:
+    def __init__(self, sets=(), disks=(), snapshots=(), images=(), failures=()):
+        self._failures = set(failures)
+        self.disk_encryption_sets = SimpleNamespace(list=lambda: iter(sets))
+        self.disks = SimpleNamespace(list=lambda: self._listing("disks", disks))
+        self.snapshots = SimpleNamespace(list=lambda: self._listing("snapshots", snapshots))
+        self.images = SimpleNamespace(list=lambda: self._listing("images", images))
+
+    def _listing(self, name, value):
+        if name in self._failures:
+            raise _http_error("AuthorizationFailed", 403)
+        return iter(value)
+
+
+def test_disk_encryption_set_row_exports_the_key_url_never_key_material():
+    client = _FakeCompute(disks=[_sdk_disk()], snapshots=[_sdk_snapshot()], images=[_sdk_image()])
+    counts = disk_encryption_sets_export.count_consumers(client, [])
+    row = disk_encryption_sets_export.build_row(_sdk_encryption_set(), counts)
+    assert row["Name"] == "des1" and row["Resource Group"] == "rg1"
+    assert row["Encryption Type"] == "EncryptionAtRestWithCustomerKey"
+    assert row["Active Key URL"] == "https://kv1.vault.azure.net/keys/cmk1/abcdef"
+    assert row["Active Key Vault ID"].endswith("/vaults/kv1")
+    assert row["Previous Key Count"] == 1
+    assert row["Rotation To Latest Key Version Enabled"] == "Yes"
+    assert row["Identity Type"] == "SystemAssigned"
+    assert row["Disks Using"] == 1 and row["Snapshots Using"] == 1
+    assert row["Images Using"] == 2  # os disk + one data disk
+
+    source = Path(disk_encryption_sets_export.__file__).read_text(encoding="utf-8")
+    for forbidden in ("keyvault-keys", "get_key(", "KeyClient", "key_value", "secret"):
+        assert forbidden not in source
+    assert all("Key Material" not in column for column in disk_encryption_sets_export.COLUMNS)
+
+
+def test_disk_encryption_set_with_no_consumers_counts_zero():
+    client = _FakeCompute()
+    counts = disk_encryption_sets_export.count_consumers(client, [])
+    row = disk_encryption_sets_export.build_row(_sdk_encryption_set(), counts)
+    assert (row["Disks Using"], row["Snapshots Using"], row["Images Using"]) == (0, 0, 0)
+
+
+def test_disk_encryption_set_auto_key_rotation_error_is_rendered():
+    encryption_set = _sdk_encryption_set(
+        autoKeyRotationError={"code": "KeyVaultAccessForbidden", "message": "no access"}
+    )
+    row = disk_encryption_sets_export.build_row(encryption_set, {})
+    assert row["Auto Key Rotation Error"] == "KeyVaultAccessForbidden: no access"
+
+
+def test_disk_encryption_set_consumer_listing_failure_is_partial_not_fatal():
+    client = _FakeCompute(disks=[_sdk_disk()], failures=("snapshots",))
+    errors = []
+    counts = disk_encryption_sets_export.count_consumers(client, errors)
+    row = disk_encryption_sets_export.build_row(_sdk_encryption_set(), counts)
+    assert row["Disks Using"] == 1 and row["Snapshots Using"] == 0
+    assert [(e["Scope"], e["Operation"], e["Error Code"]) for e in errors] == [
+        ("Snapshots Using", "snapshots.list", "AuthorizationFailed")
+    ]
+
+
+def test_disk_encryption_sets_empty_listing_is_no_resources_found(monkeypatch):
+    _patch_client(monkeypatch, disk_encryption_sets_export, _FakeCompute())
+    with pytest.raises(disk_encryption_sets_export.utils.NoResourcesFound):
+        disk_encryption_sets_export.main("00000000-0000-0000-0000-000000000001", "Sub")

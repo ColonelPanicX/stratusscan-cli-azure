@@ -21,7 +21,7 @@
 
 ---
 
-A Python CLI tool for exporting Azure resource inventories to Excel workbooks. 75 exporters across Public and US Government cloud environments, targeting infrastructure audits, FedRAMP evidence collection, and cost analysis.
+A Python CLI tool for exporting Azure resource inventories to Excel workbooks. 80 exporters across Public and US Government cloud environments, targeting infrastructure audits, FedRAMP evidence collection, and cost analysis.
 
 Sibling project to [StratusScan-CLI (AWS)](https://github.com/ColonelPanicX/StratusScan-CLI). Shares the same philosophy, output format, and architectural patterns — not a fork.
 
@@ -234,7 +234,7 @@ python scripts/role_assignments_export.py
 | `key_vault_objects_export.py` | Key Vault Objects (Keys/Secrets/Certs) |
 | `role_assignments_export.py` | RBAC Role Assignments |
 
-### Tier 2 — Workloads (41 exporters)
+### Tier 2 — Workloads (46 exporters)
 
 | Script | Azure Service |
 |---|---|
@@ -242,8 +242,10 @@ python scripts/role_assignments_export.py
 | `container_registry_export.py` | Container Registries (ACR) |
 | `container_apps_export.py` | Container Apps |
 | `container_instances_export.py` | Container Instances (ACI) |
+| `cognitive_services_export.py` | AI / Cognitive Services |
 | `app_service_export.py` | App Service / Web Apps |
 | `function_apps_export.py` | Function Apps |
+| `app_service_plans_export.py` | App Service Plans |
 | `azure_sql_export.py` | Azure SQL Databases |
 | `sql_managed_instance_export.py` | SQL Managed Instances |
 | `cosmos_db_export.py` | Cosmos DB Accounts |
@@ -261,9 +263,11 @@ python scripts/role_assignments_export.py
 | `application_gateway_export.py` | Application Gateways |
 | `azure_firewall_export.py` | Azure Firewalls |
 | `firewall_policy_rules_export.py` | Firewall Policy Rules |
+| `waf_policies_export.py` | WAF Policies (App Gateway) |
 | `route_tables_export.py` | Route Tables |
 | `vnet_peerings_export.py` | VNet Peerings |
 | `snapshots_export.py` | Snapshots |
+| `disk_encryption_sets_export.py` | Disk Encryption Sets |
 | `availability_sets_export.py` | Availability Sets |
 | `private_endpoints_export.py` | Private Endpoints |
 | `nat_gateways_export.py` | NAT Gateways |
@@ -279,6 +283,7 @@ python scripts/role_assignments_export.py
 | `automation_accounts_export.py` | Automation Accounts |
 | `batch_accounts_export.py` | Batch Accounts |
 | `recovery_services_vaults_export.py` | Recovery Services Vaults |
+| `backup_items_export.py` | Backup Items & Policies |
 
 ### Governance (14 exporters)
 
@@ -409,7 +414,7 @@ python -c "from azure.identity import DefaultAzureCredential; DefaultAzureCreden
 
 **Current version: 0.1.0-alpha** — pre-alpha, not production-ready.
 
-All 75 exporters are written and the architecture is in place. Tier 1 has been
+All 80 exporters are written and the architecture is in place. Tier 1 has been
 validated against live Azure Government subscriptions; Tier 2, Governance and
 Monitoring have not. The first release will be cut once end-to-end validation is
 complete.
@@ -418,7 +423,7 @@ complete.
 
 | Version | Target |
 |---|---|
-| `0.1.0` | First stable release — 75 exporters validated, Public + Government environments |
+| `0.1.0` | First stable release — 80 exporters validated, Public + Government environments |
 | `0.2.0` | Resource Graph Smart Scan, Entra ID exporters (Microsoft Graph SDK), pricing data |
 | `0.3.0+` | Multi-tenant scanning, Textual TUI |
 

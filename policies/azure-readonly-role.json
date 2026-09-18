@@ -13,6 +13,7 @@
     "Microsoft.ContainerService/*/read",
     "Microsoft.ContainerRegistry/*/read",
     "Microsoft.ContainerInstance/*/read",
+    "Microsoft.CognitiveServices/*/read",
     "Microsoft.App/*/read",
     "Microsoft.Web/*/read",
     "Microsoft.Sql/*/read",
