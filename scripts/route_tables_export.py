@@ -17,11 +17,36 @@ utils.log_script_start("route_tables_export.py", "Azure Route Tables Export")
 
 log = utils.get_logger()
 
+_DEFAULT_ROUTE_PREFIXES = {"0.0.0.0/0", "::/0"}
+
 
 def collect_route_tables(subscription_id: str) -> list:
     client = utils.get_azure_client("network", subscription_id)
     log.info("Listing all route tables in subscription %s", subscription_id)
     return list(client.route_tables.list_all())
+
+
+def _default_route_next_hop(routes) -> str:
+    hops = [
+        utils.s(r.next_hop_type) for r in routes
+        if utils.s(r.address_prefix).strip() in _DEFAULT_ROUTE_PREFIXES
+    ]
+    return ", ".join(hops)
+
+
+def _route_rows(rt, rg: str) -> list:
+    return [
+        {
+            "Route Table": rt.name,
+            "Resource Group": rg,
+            "Route Name": route.name,
+            "Address Prefix": utils.s(route.address_prefix),
+            "Next Hop Type": utils.s(route.next_hop_type),
+            "Next Hop IP": utils.s(route.next_hop_ip_address),
+            "Provisioning State": utils.s(route.provisioning_state),
+        }
+        for route in (rt.routes or [])
+    ]
 
 
 def main(subscription_id: str, subscription_name: str) -> None:
@@ -35,27 +60,32 @@ def main(subscription_id: str, subscription_name: str) -> None:
         return
 
     rows = []
+    route_rows = []
     for rt in tables:
         rg = utils.extract_resource_group(rt.id)
         tags = rt.tags or {}
         routes = rt.routes or []
-        associated_subnets = len(rt.subnets or [])
         rows.append({
             "Name": rt.name,
             "Resource Group": rg,
             "Location": rt.location,
             "Route Count": len(routes),
-            "Associated Subnets": associated_subnets,
-            "Disable BGP Route Propagation": rt.disable_bgp_route_propagation,
-            "Provisioning State": rt.provisioning_state or "",
+            "Associated Subnets": len(rt.subnets or []),
+            "Disable BGP Route Propagation": (
+                "" if rt.disable_bgp_route_propagation is None else rt.disable_bgp_route_propagation
+            ),
+            "Provisioning State": utils.s(rt.provisioning_state),
             "Tags": "; ".join(f"{k}={v}" for k, v in tags.items()),
+            "Default Route Next Hop": _default_route_next_hop(routes),
         })
+        route_rows.extend(_route_rows(rt, rg))
 
-    df = pd.DataFrame(rows)
     filename = utils.create_export_filename(subscription_name, "route-tables", "all")
-    utils.save_dataframe_to_excel(df, filename, sheet_name="Route Tables")
-    print(f"Exported {len(rows)} route table(s) → {filename}")
-    log.info("Export complete: %d route tables", len(rows))
+    utils.save_multiple_dataframes_to_excel(
+        {"Route Tables": pd.DataFrame(rows), "Routes": pd.DataFrame(route_rows)}, filename
+    )
+    print(f"Exported {len(rows)} route table(s) and {len(route_rows)} route(s) → {filename}")
+    log.info("Export complete: %d route tables, %d routes", len(rows), len(route_rows))
 
 
 if __name__ == "__main__":

@@ -30,10 +30,49 @@ def collect_disk_ids(subscription_id: str) -> set:
 
 
 def _source_disk_id(snapshot) -> str:
-    try:
-        return snapshot.creation_data.source_resource_id or ""
-    except Exception:
-        return ""
+    creation = snapshot.creation_data
+    return (creation.source_resource_id if creation else None) or ""
+
+
+def _subscription_of(resource_id: str) -> str:
+    parts = resource_id.split("/")
+    for i, part in enumerate(parts):
+        if part.lower() == "subscriptions" and i + 1 < len(parts):
+            return parts[i + 1]
+    return ""
+
+
+def _orphaned(source_id: str, subscription_id: str, existing_disks: set) -> str:
+    if not source_id or "/disks/" not in source_id.lower():
+        return "N/A"
+    if _subscription_of(source_id).lower() != subscription_id.lower():
+        return "N/A (other subscription)"
+    return "No" if source_id.lower() in existing_disks else "Yes"
+
+
+def _build_row(snap, subscription_id: str, existing_disks: set) -> dict:
+    tags = snap.tags or {}
+    source_id = _source_disk_id(snap)
+    encryption = snap.encryption
+    return {
+        "Name": snap.name,
+        "Resource Group": utils.extract_resource_group(snap.id),
+        "Location": snap.location,
+        "Source Disk": source_id.split("/")[-1] if source_id else "",
+        "Source Resource Group": utils.extract_resource_group(source_id),
+        "OS Type": utils.s(snap.os_type) if snap.os_type else "Data",
+        "Disk Size GB": snap.disk_size_gb if snap.disk_size_gb is not None else "",
+        "SKU": utils.s(snap.sku.name) if snap.sku else "",
+        "Time Created": utils.s(snap.time_created),
+        "Incremental": "Yes" if snap.incremental else "No",
+        "Orphaned": _orphaned(source_id, subscription_id, existing_disks),
+        "Provisioning State": utils.s(snap.provisioning_state),
+        "Tags": "; ".join(f"{k}={v}" for k, v in tags.items()),
+        "Source Subscription": _subscription_of(source_id),
+        "Encryption": utils.s(encryption.type) if encryption else "",
+        "Network Access Policy": utils.s(snap.network_access_policy),
+        "Public Network Access": utils.s(snap.public_network_access),
+    }
 
 
 def main(subscription_id: str, subscription_name: str) -> None:
@@ -47,38 +86,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
         return
 
     existing_disks = collect_disk_ids(subscription_id)
-
-    rows = []
-    for snap in snapshots:
-        rg = snap.id.split("/resourceGroups/")[1].split("/")[0] if snap.id else ""
-        source_id = _source_disk_id(snap)
-        source_name = source_id.split("/")[-1] if source_id else ""
-        source_rg = ""
-        if "/resourceGroups/" in source_id:
-            source_rg = source_id.split("/resourceGroups/")[1].split("/")[0]
-
-        is_disk_source = "/disks/" in source_id.lower()
-        if not source_id or not is_disk_source:
-            orphaned = "N/A"
-        else:
-            orphaned = "No" if source_id.lower() in existing_disks else "Yes"
-
-        tags = snap.tags or {}
-        rows.append({
-            "Name": snap.name,
-            "Resource Group": rg,
-            "Location": snap.location,
-            "Source Disk": source_name,
-            "Source Resource Group": source_rg,
-            "OS Type": utils.s(snap.os_type) if snap.os_type else "Data",
-            "Disk Size GB": snap.disk_size_gb or "",
-            "SKU": snap.sku.name if snap.sku else "",
-            "Time Created": utils.s(snap.time_created),
-            "Incremental": "Yes" if snap.incremental else "No",
-            "Orphaned": orphaned,
-            "Provisioning State": snap.provisioning_state or "",
-            "Tags": "; ".join(f"{k}={v}" for k, v in tags.items()),
-        })
+    rows = [_build_row(snap, subscription_id, existing_disks) for snap in snapshots]
 
     df = pd.DataFrame(rows)
     filename = utils.create_export_filename(subscription_name, "snapshots", "all")

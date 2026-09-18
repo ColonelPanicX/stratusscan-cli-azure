@@ -36,7 +36,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
 
     rows = []
     for plan in plans:
-        rg = plan.id.split("/resourceGroups/")[1].split("/")[0] if plan.id else ""
+        rg = utils.extract_resource_group(plan.id)
         vnets = [v.id.split("/")[-1] for v in (getattr(plan, "virtual_networks", None) or []) if getattr(v, "id", "")]
         tags = plan.tags or {}
         rows.append({

@@ -52,7 +52,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
 
     rows = []
     for avset in avsets:
-        rg = avset.id.split("/resourceGroups/")[1].split("/")[0] if avset.id else ""
+        rg = utils.extract_resource_group(avset.id)
         vms = _member_vms(avset)
         tags = avset.tags or {}
         rows.append({

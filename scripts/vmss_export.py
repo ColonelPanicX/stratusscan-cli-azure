@@ -63,7 +63,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
 
     rows = []
     for vmss in scale_sets:
-        rg = vmss.id.split("/resourceGroups/")[1].split("/")[0] if vmss.id else ""
+        rg = utils.extract_resource_group(vmss.id)
         tags = vmss.tags or {}
         rows.append({
             "Name": vmss.name,

@@ -21,9 +21,53 @@ log = utils.get_logger()
 def collect_web_apps(subscription_id: str) -> list:
     client = utils.get_azure_client("web", subscription_id)
     log.info("Listing all web apps in subscription %s", subscription_id)
-    # list() returns all sites including function apps; filter by kind
     all_sites = list(client.web_apps.list())
     return [s for s in all_sites if not (s.kind and "functionapp" in s.kind.lower())]
+
+
+def site_config_columns(site_config) -> dict:
+    """Runtime columns read from the listed siteConfig; all blank when the list omits it."""
+    if site_config is None:
+        return {
+            "Runtime Stack": "", ".NET Version": "", "Node Version": "", "Python Version": "",
+            "PHP Version": "", "Java Version": "", "Min TLS Version": "", "FTPS State": "",
+        }
+    return {
+        "Runtime Stack": site_config.linux_fx_version or site_config.windows_fx_version or "",
+        ".NET Version": utils.s(site_config.net_framework_version),
+        "Node Version": utils.s(site_config.node_version),
+        "Python Version": utils.s(site_config.python_version),
+        "PHP Version": utils.s(site_config.php_version),
+        "Java Version": utils.s(site_config.java_version),
+        "Min TLS Version": utils.s(site_config.min_tls_version),
+        "FTPS State": utils.s(site_config.ftps_state),
+    }
+
+
+def _build_row(app) -> dict:
+    tags = app.tags or {}
+    config = site_config_columns(app.site_config)
+    return {
+        "Name": app.name,
+        "Resource Group": app.resource_group or utils.extract_resource_group(app.id),
+        "Location": app.location,
+        "Kind": app.kind or "",
+        "State": app.state or "",
+        "HTTPS Only": "" if app.https_only is None else app.https_only,
+        "Default Hostname": app.default_host_name or "",
+        "App Service Plan": app.server_farm_id.split("/")[-1] if app.server_farm_id else "",
+        "Runtime Stack": config["Runtime Stack"],
+        "Outbound IPs": app.outbound_ip_addresses or "",
+        "Tags": "; ".join(f"{k}={v}" for k, v in tags.items()),
+        ".NET Version": config[".NET Version"],
+        "Node Version": config["Node Version"],
+        "Python Version": config["Python Version"],
+        "PHP Version": config["PHP Version"],
+        "Java Version": config["Java Version"],
+        "Min TLS Version": config["Min TLS Version"],
+        "FTPS State": config["FTPS State"],
+        "Public Network Access": utils.s(app.public_network_access),
+    }
 
 
 def main(subscription_id: str, subscription_name: str) -> None:
@@ -36,32 +80,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
         print("No App Service web apps found.")
         return
 
-    rows = []
-    for app in apps:
-        rg = app.resource_group or (
-            utils.extract_resource_group(app.id)
-        )
-        tags = app.tags or {}
-        rows.append({
-            "Name": app.name,
-            "Resource Group": rg,
-            "Location": app.location,
-            "Kind": app.kind or "",
-            "State": app.state or "",
-            "HTTPS Only": app.https_only,
-            "Default Hostname": app.default_host_name or "",
-            "App Service Plan": (
-                app.server_farm_id.split("/")[-1]
-                if app.server_farm_id else ""
-            ),
-            "Runtime Stack": (
-                f"{app.site_config.linux_fx_version}"
-                if app.site_config and app.site_config.linux_fx_version
-                else ""
-            ),
-            "Outbound IPs": app.outbound_ip_addresses or "",
-            "Tags": "; ".join(f"{k}={v}" for k, v in tags.items()),
-        })
+    rows = [_build_row(app) for app in apps]
 
     df = pd.DataFrame(rows)
     filename = utils.create_export_filename(subscription_name, "app-service", "all")

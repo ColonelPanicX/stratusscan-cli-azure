@@ -36,7 +36,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
 
     rows = []
     for w in watchers:
-        rg = w.id.split("/resourceGroups/")[1].split("/")[0] if w.id else ""
+        rg = utils.extract_resource_group(w.id)
         tags = w.tags or {}
         rows.append({
             "Name": w.name,

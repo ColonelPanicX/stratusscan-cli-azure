@@ -77,7 +77,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
     detail_rows = []
 
     for r in resources:
-        rg = r.id.split("/resourceGroups/")[1].split("/")[0] if r.id and "/resourceGroups/" in r.id else ""
+        rg = utils.extract_resource_group(r.id)
         try:
             settings = list(monitor.diagnostic_settings.list(r.id))
             status = "Yes" if settings else "No"

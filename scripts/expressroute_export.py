@@ -36,7 +36,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
 
     rows = []
     for c in circuits:
-        rg = c.id.split("/resourceGroups/")[1].split("/")[0] if c.id else ""
+        rg = utils.extract_resource_group(c.id)
         provider = getattr(c, "service_provider_properties", None)
         tags = c.tags or {}
         rows.append({

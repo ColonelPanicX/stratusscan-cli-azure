@@ -20,7 +20,7 @@ log = utils.get_logger()
 
 def _iter_accounts(client):
     for acct in client.storage_accounts.list():
-        rg = acct.id.split("/resourceGroups/")[1].split("/")[0] if acct.id else ""
+        rg = utils.extract_resource_group(acct.id)
         yield rg, acct.name
 
 
