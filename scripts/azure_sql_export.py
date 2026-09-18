@@ -18,6 +18,7 @@ except ImportError:
     import utils
 
 import pandas as pd
+from azure.core.exceptions import HttpResponseError
 
 utils.setup_logging("azure-sql-export")
 utils.log_script_start("azure_sql_export.py", "Azure SQL Servers & Databases Export")
@@ -83,19 +84,21 @@ def _build_database_row(server, rg: str, db) -> dict[str, Any]:
     }
 
 
-def collect_sql_servers_and_dbs(subscription_id: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Return (server_rows, database_rows). A server whose database listing fails carries the error code in its row."""
+def collect_sql_servers_and_dbs(subscription_id: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list]:
+    """Return (server_rows, database_rows, errors). A server whose database listing fails carries the error code in its row and in errors."""
     client = utils.get_azure_client("sql", subscription_id)
     log.info("Listing all SQL servers in subscription %s", subscription_id)
     servers = list(client.servers.list(expand=_SERVERS_EXPAND))
 
     server_rows: list[dict[str, Any]] = []
     db_rows: list[dict[str, Any]] = []
+    errors: list = []
     for server in servers:
         rg = utils.extract_resource_group(server.id)
         try:
             databases = list(client.databases.list_by_server(rg, server.name))
-        except Exception as exc:
+        except HttpResponseError as exc:
+            errors.append(utils.error_record(utils.s(server.name), "databases.list_by_server", exc))
             log.warning("Could not list databases for server %s: %s", server.name, exc)
             server_rows.append(_build_server_row(server, rg, f"ERROR ({_error_code(exc)})"))
             continue
@@ -104,32 +107,30 @@ def collect_sql_servers_and_dbs(subscription_id: str) -> tuple[list[dict[str, An
         server_rows.append(_build_server_row(server, rg, len(user_databases)))
         for db in user_databases:
             db_rows.append(_build_database_row(server, rg, db))
-    return server_rows, db_rows
+    return server_rows, db_rows, errors
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("sql", environment):
         sys.exit(0)
 
-    server_rows, db_rows = collect_sql_servers_and_dbs(subscription_id)
+    server_rows, db_rows, errors = collect_sql_servers_and_dbs(subscription_id)
     if not server_rows:
-        print("No Azure SQL servers found.")
-        return
+        raise utils.NoResourcesFound("Azure SQL servers")
 
     sheets = {"Servers": pd.DataFrame(server_rows)}
     if db_rows:
         sheets["Databases"] = pd.DataFrame(db_rows)
 
     filename = utils.create_export_filename(subscription_name, "azure-sql", "all")
-    utils.save_multiple_dataframes_to_excel(sheets, filename)
+    utils.save_multiple_dataframes_to_excel(sheets, filename, errors=errors)
     print(f"Exported {len(server_rows)} server(s), {len(db_rows)} database(s) → {filename}")
     log.info("Export complete: %d servers, %d databases", len(server_rows), len(db_rows))
+    return utils.ExportResult(rows=len(server_rows) + len(db_rows), filename=filename, errors=errors)
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "azure-sql")

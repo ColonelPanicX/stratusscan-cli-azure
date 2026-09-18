@@ -11,6 +11,7 @@ except ImportError:
     import utils
 
 import pandas as pd
+from azure.core.exceptions import HttpResponseError
 
 utils.setup_logging("logic-apps-export")
 utils.log_script_start("logic_apps_export.py", "Logic Apps (Workflows) Export")
@@ -18,31 +19,32 @@ utils.log_script_start("logic_apps_export.py", "Logic Apps (Workflows) Export")
 log = utils.get_logger()
 
 
-def collect_workflows(subscription_id: str) -> list:
+def collect_workflows(subscription_id: str) -> tuple:
     client = utils.get_azure_client("logic", subscription_id)
     log.info("Listing Logic App workflows in subscription %s", subscription_id)
     if hasattr(client.workflows, "list_by_subscription"):
-        return list(client.workflows.list_by_subscription())
+        return list(client.workflows.list_by_subscription()), []
 
     resource = utils.get_azure_client("resource", subscription_id)
     workflows = []
+    errors: list = []
     for rg in resource.resource_groups.list():
         try:
             workflows.extend(client.workflows.list_by_resource_group(rg.name))
-        except Exception as exc:
+        except HttpResponseError as exc:
+            errors.append(utils.error_record(rg.name, "workflows.list_by_resource_group", exc))
             log.warning("Failed to list Logic App workflows in %s: %s", rg.name, exc)
-    return workflows
+    return workflows, errors
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("logic", environment):
         sys.exit(0)
 
-    workflows = collect_workflows(subscription_id)
-    if not workflows:
-        print("No Logic App workflows found.")
-        return
+    workflows, errors = collect_workflows(subscription_id)
+    if not workflows and not errors:
+        raise utils.NoResourcesFound("Logic App workflows")
 
     rows = []
     for wf in workflows:
@@ -62,14 +64,13 @@ def main(subscription_id: str, subscription_name: str) -> None:
 
     df = pd.DataFrame(rows)
     filename = utils.create_export_filename(subscription_name, "logic-apps", "all")
-    utils.save_dataframe_to_excel(df, filename, sheet_name="Logic Apps")
+    utils.save_dataframe_to_excel(df, filename, sheet_name="Logic Apps", errors=errors)
     print(f"Exported {len(rows)} Logic App workflow(s) → {filename}")
     log.info("Export complete: %d workflows", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=errors)
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "logic-apps")

@@ -36,19 +36,14 @@ def collect_costs(subscription_id: str) -> list:
     scope = f"/subscriptions/{subscription_id}"
     log.info("Querying month-to-date cost for subscription %s", subscription_id)
 
-    rows = []
-    try:
-        result = client.query.usage(scope=scope, parameters=_QUERY)
-        columns = [getattr(c, "name", "") for c in (result.columns or [])]
-        for raw in result.rows or []:
-            rows.append(dict(zip(columns, raw)))
-    except Exception as e:
-        log.warning("Failed to query Cost Management: %s", e)
-
-    return rows
+    result = client.query.usage(scope=scope, parameters=_QUERY)
+    if result is None:
+        return []
+    columns = [getattr(c, "name", "") for c in (result.columns or [])]
+    return [dict(zip(columns, raw)) for raw in result.rows or []]
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("costmanagement", environment):
         sys.exit(0)
@@ -56,19 +51,17 @@ def main(subscription_id: str, subscription_name: str) -> None:
     rows = collect_costs(subscription_id)
 
     if not rows:
-        print("No cost data found for the current billing period.")
-        return
+        raise utils.NoResourcesFound("cost data")
 
     df = pd.DataFrame(rows)
     filename = utils.create_export_filename(subscription_name, "cost-management", "mtd")
     utils.save_dataframe_to_excel(df, filename)
     print(f"Exported {len(rows)} cost row(s) → {filename}")
     log.info("Export complete: %d cost rows", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=[])
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "cost-management")

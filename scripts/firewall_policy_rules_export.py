@@ -11,6 +11,7 @@ except ImportError:
     import utils
 
 import pandas as pd
+from azure.core.exceptions import HttpResponseError
 
 utils.setup_logging("firewall-policy-rules-export")
 utils.log_script_start("firewall_policy_rules_export.py", "Azure Firewall Policy Rules Export")
@@ -107,17 +108,17 @@ def collect_rule_collection_groups(subscription_id: str, resource_group: str, po
     return list(client.firewall_policy_rule_collection_groups.list(resource_group, policy_name))
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("network", environment):
         sys.exit(0)
 
     policies = collect_policies(subscription_id)
     if not policies:
-        print("No firewall policies found.")
-        return
+        raise utils.NoResourcesFound("firewall policies")
 
     rows = []
+    errors: list = []
     for policy in policies:
         policy_rg = utils.extract_resource_group(policy.id)
         policy_name = policy.name or ""
@@ -130,7 +131,10 @@ def main(subscription_id: str, subscription_name: str) -> None:
 
         try:
             rcgs = collect_rule_collection_groups(subscription_id, policy_rg, policy_name)
-        except Exception as e:
+        except HttpResponseError as e:
+            errors.append(
+                utils.error_record(policy_name, "firewall_policy_rule_collection_groups.list", e)
+            )
             log.warning("Failed to list rule collection groups for %s: %s", policy_name, e)
             continue
 
@@ -166,20 +170,18 @@ def main(subscription_id: str, subscription_name: str) -> None:
                         row["Rule Type"] = rule_type
                         rows.append(row)
 
-    if not rows:
-        print("No firewall policy rules found.")
-        return
+    if not rows and not errors:
+        raise utils.NoResourcesFound("firewall policy rules")
 
     df = pd.DataFrame(rows)
     filename = utils.create_export_filename(subscription_name, "firewall-policy-rules", "all")
-    utils.save_dataframe_to_excel(df, filename, sheet_name="Firewall Policy Rules")
+    utils.save_dataframe_to_excel(df, filename, sheet_name="Firewall Policy Rules", errors=errors)
     print(f"Exported {len(rows)} firewall policy rule(s) → {filename}")
     log.info("Export complete: %d rules across %d policies", len(rows), len(policies))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=errors)
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "firewall-policy-rules")

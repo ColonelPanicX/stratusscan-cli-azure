@@ -24,15 +24,14 @@ def collect_resource_groups(subscription_id: str) -> list:
     return list(client.resource_groups.list())
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("resource", environment):
         sys.exit(0)
 
     rgs = collect_resource_groups(subscription_id)
     if not rgs:
-        print("No resource groups found.")
-        return
+        raise utils.NoResourcesFound("resource groups")
 
     rows = []
     for rg in rgs:
@@ -49,11 +48,10 @@ def main(subscription_id: str, subscription_name: str) -> None:
     utils.save_dataframe_to_excel(df, filename, sheet_name="Resource Groups")
     print(f"Exported {len(rows)} resource group(s) → {filename}")
     log.info("Export complete: %d resource groups", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=[])
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "resource-groups")

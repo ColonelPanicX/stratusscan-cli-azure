@@ -24,7 +24,7 @@ def collect_vnets(subscription_id: str) -> list:
     return list(client.virtual_networks.list_all())
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("network", environment):
         sys.exit(0)
@@ -46,19 +46,17 @@ def main(subscription_id: str, subscription_name: str) -> None:
                 })
 
     if not rows:
-        print("No service endpoints found.")
-        return
+        raise utils.NoResourcesFound("service endpoints")
 
     df = pd.DataFrame(rows)
     filename = utils.create_export_filename(subscription_name, "service-endpoints", "all")
     utils.save_dataframe_to_excel(df, filename, sheet_name="Service Endpoints")
     print(f"Exported {len(rows)} service endpoint(s) → {filename}")
     log.info("Export complete: %d service endpoints", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=[])
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "service-endpoints")

@@ -11,6 +11,7 @@ except ImportError:
     import utils
 
 import pandas as pd
+from azure.core.exceptions import HttpResponseError
 
 utils.setup_logging("postgresql-flexible-export")
 utils.log_script_start("postgresql_flexible_export.py", "PostgreSQL Flexible Server Export")
@@ -18,31 +19,32 @@ utils.log_script_start("postgresql_flexible_export.py", "PostgreSQL Flexible Ser
 log = utils.get_logger()
 
 
-def collect_servers(subscription_id: str) -> list:
+def collect_servers(subscription_id: str) -> tuple:
     client = utils.get_azure_client("postgresql", subscription_id)
     log.info("Listing PostgreSQL flexible servers in subscription %s", subscription_id)
     if hasattr(client.servers, "list"):
-        return list(client.servers.list())
+        return list(client.servers.list()), []
 
     resource = utils.get_azure_client("resource", subscription_id)
     servers = []
+    errors: list = []
     for rg in resource.resource_groups.list():
         try:
             servers.extend(client.servers.list_by_resource_group(rg.name))
-        except Exception as exc:
+        except HttpResponseError as exc:
+            errors.append(utils.error_record(rg.name, "servers.list_by_resource_group", exc))
             log.warning("Failed to list PostgreSQL flexible servers in %s: %s", rg.name, exc)
-    return servers
+    return servers, errors
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("postgresql", environment):
         sys.exit(0)
 
-    servers = collect_servers(subscription_id)
-    if not servers:
-        print("No PostgreSQL flexible servers found.")
-        return
+    servers, errors = collect_servers(subscription_id)
+    if not servers and not errors:
+        raise utils.NoResourcesFound("PostgreSQL flexible servers")
 
     rows = []
     for srv in servers:
@@ -72,14 +74,13 @@ def main(subscription_id: str, subscription_name: str) -> None:
 
     df = pd.DataFrame(rows)
     filename = utils.create_export_filename(subscription_name, "postgresql-flexible", "all")
-    utils.save_dataframe_to_excel(df, filename, sheet_name="PostgreSQL Flexible")
+    utils.save_dataframe_to_excel(df, filename, sheet_name="PostgreSQL Flexible", errors=errors)
     print(f"Exported {len(rows)} PostgreSQL flexible server(s) → {filename}")
     log.info("Export complete: %d servers", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=errors)
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "postgresql-flexible")

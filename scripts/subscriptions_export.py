@@ -23,17 +23,11 @@ def collect_subscriptions() -> list:
     return utils.list_subscriptions()
 
 
-def main() -> None:
-    try:
-        subs = collect_subscriptions()
-    except utils.AzureAccessError as exc:
-        print(f"Subscription listing failed — {exc}")
-        print(exc.hint)
-        sys.exit(1)
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
+    subs = collect_subscriptions()
     if not subs:
         log.warning("No subscriptions found or accessible")
-        print("No subscriptions found.")
-        return
+        raise utils.NoResourcesFound("subscriptions")
 
     rows = []
     for sub in subs:
@@ -50,7 +44,10 @@ def main() -> None:
     utils.save_dataframe_to_excel(df, filename, sheet_name="Subscriptions")
     print(f"Exported {len(rows)} subscription(s) → {filename}")
     log.info("Export complete: %d subscriptions", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=[])
 
 
 if __name__ == "__main__":
-    main()
+    import runner
+
+    runner.run_exporter(main, "subscriptions")

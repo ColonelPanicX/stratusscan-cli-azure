@@ -33,15 +33,14 @@ def _names(sub_resources) -> str:
     return ", ".join(names)
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("network", environment):
         sys.exit(0)
 
     gateways = collect_nat_gateways(subscription_id)
     if not gateways:
-        print("No NAT gateways found.")
-        return
+        raise utils.NoResourcesFound("NAT gateways")
 
     rows = []
     for gw in gateways:
@@ -65,11 +64,10 @@ def main(subscription_id: str, subscription_name: str) -> None:
     utils.save_dataframe_to_excel(df, filename, sheet_name="NAT Gateways")
     print(f"Exported {len(rows)} NAT gateway(s) → {filename}")
     log.info("Export complete: %d NAT gateways", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=[])
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "nat-gateways")

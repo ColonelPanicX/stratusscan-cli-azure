@@ -11,6 +11,7 @@ except ImportError:
     import utils
 
 import pandas as pd
+from azure.core.exceptions import HttpResponseError
 
 utils.setup_logging("api-management-export")
 utils.log_script_start("api_management_export.py", "API Management Services Export")
@@ -18,31 +19,32 @@ utils.log_script_start("api_management_export.py", "API Management Services Expo
 log = utils.get_logger()
 
 
-def collect_services(subscription_id: str) -> list:
+def collect_services(subscription_id: str) -> tuple:
     client = utils.get_azure_client("apimanagement", subscription_id)
     log.info("Listing API Management services in subscription %s", subscription_id)
     if hasattr(client.api_management_service, "list"):
-        return list(client.api_management_service.list())
+        return list(client.api_management_service.list()), []
 
     resource = utils.get_azure_client("resource", subscription_id)
     services = []
+    errors: list = []
     for rg in resource.resource_groups.list():
         try:
             services.extend(client.api_management_service.list_by_resource_group(rg.name))
-        except Exception as exc:
+        except HttpResponseError as exc:
+            errors.append(utils.error_record(rg.name, "api_management_service.list_by_resource_group", exc))
             log.warning("Failed to list API Management services in %s: %s", rg.name, exc)
-    return services
+    return services, errors
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("apimanagement", environment):
         sys.exit(0)
 
-    services = collect_services(subscription_id)
-    if not services:
-        print("No API Management services found.")
-        return
+    services, errors = collect_services(subscription_id)
+    if not services and not errors:
+        raise utils.NoResourcesFound("API Management services")
 
     rows = []
     for svc in services:
@@ -64,14 +66,13 @@ def main(subscription_id: str, subscription_name: str) -> None:
 
     df = pd.DataFrame(rows)
     filename = utils.create_export_filename(subscription_name, "api-management", "all")
-    utils.save_dataframe_to_excel(df, filename, sheet_name="API Management")
+    utils.save_dataframe_to_excel(df, filename, sheet_name="API Management", errors=errors)
     print(f"Exported {len(rows)} API Management service(s) → {filename}")
     log.info("Export complete: %d services", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=errors)
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "api-management")

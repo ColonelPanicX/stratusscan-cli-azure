@@ -62,15 +62,14 @@ def _summary_rows(detail_rows: list) -> list:
     return rows
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("policyinsights", environment):
         sys.exit(0)
 
     states = collect_states(subscription_id)
     if not states:
-        print("No policy compliance states found.")
-        return
+        raise utils.NoResourcesFound("policy compliance states")
 
     details = _detail_rows(states)
     sheets = {
@@ -82,11 +81,10 @@ def main(subscription_id: str, subscription_name: str) -> None:
     utils.save_multiple_dataframes_to_excel(sheets, filename)
     print(f"Exported {len(details)} policy compliance record(s) → {filename}")
     log.info("Export complete: %d compliance records", len(details))
+    return utils.ExportResult(rows=len(details), filename=filename, errors=[])
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "policy-compliance")

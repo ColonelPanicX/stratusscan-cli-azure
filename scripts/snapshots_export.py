@@ -75,15 +75,14 @@ def _build_row(snap, subscription_id: str, existing_disks: set) -> dict:
     }
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("compute", environment):
         sys.exit(0)
 
     snapshots = collect_snapshots(subscription_id)
     if not snapshots:
-        print("No snapshots found.")
-        return
+        raise utils.NoResourcesFound("snapshots")
 
     existing_disks = collect_disk_ids(subscription_id)
     rows = [_build_row(snap, subscription_id, existing_disks) for snap in snapshots]
@@ -93,11 +92,10 @@ def main(subscription_id: str, subscription_name: str) -> None:
     utils.save_dataframe_to_excel(df, filename, sheet_name="Snapshots")
     print(f"Exported {len(rows)} snapshot(s) → {filename}")
     log.info("Export complete: %d snapshots", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=[])
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "snapshots")

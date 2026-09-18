@@ -53,26 +53,24 @@ def collect_subnets(subscription_id: str) -> list:
     return [_build_row(vnet, subnet) for vnet in vnets for subnet in (vnet.subnets or [])]
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("network", environment):
         sys.exit(0)
 
     rows = collect_subnets(subscription_id)
     if not rows:
-        print("No subnets found.")
-        return
+        raise utils.NoResourcesFound("subnets")
 
     df = pd.DataFrame(rows)
     filename = utils.create_export_filename(subscription_name, "subnets", "all")
     utils.save_dataframe_to_excel(df, filename, sheet_name="Subnets")
     print(f"Exported {len(rows)} subnet(s) → {filename}")
     log.info("Export complete: %d subnets", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=[])
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "subnets")

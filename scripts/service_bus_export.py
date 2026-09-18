@@ -24,15 +24,14 @@ def collect_namespaces(subscription_id: str) -> list:
     return list(client.namespaces.list())
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("servicebus", environment):
         sys.exit(0)
 
     namespaces = collect_namespaces(subscription_id)
     if not namespaces:
-        print("No Service Bus namespaces found.")
-        return
+        raise utils.NoResourcesFound("Service Bus namespaces")
 
     rows = []
     for ns in namespaces:
@@ -57,11 +56,10 @@ def main(subscription_id: str, subscription_name: str) -> None:
     utils.save_dataframe_to_excel(df, filename, sheet_name="Service Bus")
     print(f"Exported {len(rows)} Service Bus namespace(s) → {filename}")
     log.info("Export complete: %d namespaces", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=[])
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "service-bus")

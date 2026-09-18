@@ -137,14 +137,19 @@ def test_collect_assessments_calls_metadata_list_once(monkeypatch):
     )
     _patch_client(monkeypatch, defender_assessments_export, client)
 
-    rows = defender_assessments_export.collect_assessments("sub-id")
+    rows, errors = defender_assessments_export.collect_assessments("sub-id")
     assert calls["metadata"] == 1
+    assert errors == []
     assert [r["Severity"] for r in rows] == ["High"] * 3
 
 
-def test_collect_assessments_metadata_failure_leaves_severity_blank(monkeypatch):
+def test_collect_assessments_metadata_failure_leaves_severity_blank_and_is_recorded(monkeypatch):
+    exceptions = pytest.importorskip("azure.core.exceptions")
+    error = exceptions.HttpResponseError(message="denied")
+    error.error = SimpleNamespace(code="AuthorizationFailed")
+
     def failing():
-        raise RuntimeError("boom")
+        raise error
         yield  # pragma: no cover
 
     client = SimpleNamespace(
@@ -155,10 +160,31 @@ def test_collect_assessments_metadata_failure_leaves_severity_blank(monkeypatch)
     )
     _patch_client(monkeypatch, defender_assessments_export, client)
 
-    rows = defender_assessments_export.collect_assessments("sub-id")
+    rows, errors = defender_assessments_export.collect_assessments("sub-id")
     assert len(rows) == 1
     assert rows[0]["Severity"] == ""
     assert rows[0]["Resource ID"] == _VM_ID
+    assert errors == [{
+        "Scope": "assessment metadata",
+        "Operation": "assessments_metadata.list",
+        "Error Code": "AuthorizationFailed",
+        "Message": "denied",
+    }]
+
+
+def test_collect_assessments_listing_failure_propagates(monkeypatch):
+    def failing(scope):
+        raise RuntimeError("boom")
+        yield  # pragma: no cover
+
+    client = SimpleNamespace(
+        assessments=SimpleNamespace(list=failing),
+        assessments_metadata=SimpleNamespace(list=lambda: iter([])),
+    )
+    _patch_client(monkeypatch, defender_assessments_export, client)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        defender_assessments_export.collect_assessments("sub-id")
 
 
 def test_assessment_row_against_real_sdk_models():
@@ -270,9 +296,29 @@ def test_collect_role_definitions_builds_guid_map(monkeypatch):
         monkeypatch, role_assignments_export,
         SimpleNamespace(role_definitions=SimpleNamespace(list=list_definitions)),
     )
-    result = role_assignments_export.collect_role_definitions("sub-id")
+    result, errors = role_assignments_export.collect_role_definitions("sub-id")
     assert captured["scope"] == "/subscriptions/sub-id"
     assert set(result) == {"acdd72a7-3385-48ef-bd42-f606fba81ae7", "custom-1"}
+    assert errors == []
+
+
+def test_collect_role_definitions_failure_is_recorded_not_silent(monkeypatch):
+    exceptions = pytest.importorskip("azure.core.exceptions")
+    error = exceptions.HttpResponseError(message="denied")
+    error.error = SimpleNamespace(code="AuthorizationFailed")
+
+    def failing(scope):
+        raise error
+
+    _patch_client(
+        monkeypatch, role_assignments_export,
+        SimpleNamespace(role_definitions=SimpleNamespace(list=failing)),
+    )
+    result, errors = role_assignments_export.collect_role_definitions("sub-id")
+    assert result == {}
+    assert [(e["Scope"], e["Operation"], e["Error Code"]) for e in errors] == [
+        ("/subscriptions/sub-id", "role_definitions.list", "AuthorizationFailed")
+    ]
 
 
 def test_role_assignment_row_joins_role_name_and_type():
@@ -579,8 +625,9 @@ def test_sql_server_without_user_databases_still_gets_a_row(monkeypatch):
     )
     _patch_client(monkeypatch, azure_sql_export, client)
 
-    server_rows, db_rows = azure_sql_export.collect_sql_servers_and_dbs("sub-id")
+    server_rows, db_rows, errors = azure_sql_export.collect_sql_servers_and_dbs("sub-id")
 
+    assert errors == []
     assert client.expand_calls == ["administrators/activedirectory"]
     assert [(r["Server Name"], r["Databases"]) for r in server_rows] == [("empty", 0), ("busy", 1)]
     assert [(r["Server Name"], r["Database Name"]) for r in db_rows] == [("busy", "app")]
@@ -602,11 +649,24 @@ def test_sql_database_listing_failure_is_marked_on_the_server_row(monkeypatch):
     )
     _patch_client(monkeypatch, azure_sql_export, client)
 
-    server_rows, db_rows = azure_sql_export.collect_sql_servers_and_dbs("sub-id")
+    server_rows, db_rows, errors = azure_sql_export.collect_sql_servers_and_dbs("sub-id")
 
     assert server_rows[0]["Databases"] == "ERROR (AuthorizationFailed)"
     assert server_rows[1]["Databases"] == 1
     assert len(db_rows) == 1
+    assert [(e["Scope"], e["Operation"], e["Error Code"], e["Message"]) for e in errors] == [
+        ("locked", "databases.list_by_server", "AuthorizationFailed", "denied")
+    ]
+
+
+def test_sql_non_http_database_failure_propagates(monkeypatch):
+    client = _FakeSqlClient(
+        servers=[_server("broken")], databases={}, errors={"broken": RuntimeError("boom")},
+    )
+    _patch_client(monkeypatch, azure_sql_export, client)
+
+    with pytest.raises(RuntimeError, match="boom"):
+        azure_sql_export.collect_sql_servers_and_dbs("sub-id")
 
 
 def test_sql_error_code_falls_back_to_exception_type():
