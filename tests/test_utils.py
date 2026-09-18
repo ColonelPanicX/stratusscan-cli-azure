@@ -415,6 +415,68 @@ def test_save_multiple_dataframes_to_excel_normalizes_every_sheet(tmp_path):
     assert _read_rows(path, "Rules") == [["Standard", None]]
 
 
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        ("=1+1", "'=1+1"),
+        ("+SUM(A1)", "+SUM(A1)"),
+        ("-2+3", "-2+3"),
+        ("@SUM(A1)", "@SUM(A1)"),
+        ("==", "'=="),
+        ("plain", "plain"),
+        ("a=b", "a=b"),
+        ("", ""),
+        (-1, -1),
+        (-1.5, -1.5),
+        (0, 0),
+        (None, None),
+        (False, False),
+    ],
+)
+def test_guard_formula_prefixes_only_dangerous_strings(value, expected):
+    assert utils._guard_formula(value) == expected
+
+
+def test_save_dataframe_to_excel_neutralizes_formula_cells(tmp_path):
+    import pandas as pd
+    from openpyxl import load_workbook
+
+    df = pd.DataFrame(
+        [
+            {"Tag": "=HYPERLINK(\"http://evil\",\"x\")", "Count": -1, "Ratio": -1.5, "Note": "-lead"},
+            {"Tag": "safe", "Count": 2, "Ratio": 0.5, "Note": "@x"},
+        ]
+    )
+    path = str(tmp_path / "guard.xlsx")
+
+    utils.save_dataframe_to_excel(df, path)
+
+    ws = load_workbook(path)["Export"]
+    assert ws["A2"].data_type == "s"
+    assert ws["A2"].value == "'=HYPERLINK(\"http://evil\",\"x\")"
+    assert ws["A3"].value == "safe"
+    assert (ws["B2"].value, ws["B2"].data_type) == (-1, "n")
+    assert (ws["C2"].value, ws["C2"].data_type) == (-1.5, "n")
+    assert (ws["D2"].value, ws["D2"].data_type) == ("-lead", "s")
+    assert (ws["D3"].value, ws["D3"].data_type) == ("@x", "s")
+    assert df["Tag"].iloc[0].startswith("=")
+
+
+def test_save_multiple_dataframes_to_excel_neutralizes_every_sheet(tmp_path):
+    import pandas as pd
+    from openpyxl import load_workbook
+
+    path = str(tmp_path / "guard-multi.xlsx")
+    utils.save_multiple_dataframes_to_excel(
+        {"A": pd.DataFrame([{"Name": "=1"}]), "B": pd.DataFrame([{"Name": "+1", "Direction": _StrEnum.INBOUND}])},
+        path,
+    )
+    wb = load_workbook(path)
+    assert wb["A"]["A2"].value == "'=1"
+    assert (wb["B"]["A2"].value, wb["B"]["A2"].data_type) == ("+1", "s")
+    assert wb["B"]["B2"].value == "Inbound"
+
+
 def test_get_azure_client_reports_renamed_class_as_import_error(monkeypatch):
     monkeypatch.setitem(utils._CLIENT_MAP, "subscription", ("json", "NoSuchClient", False))
 

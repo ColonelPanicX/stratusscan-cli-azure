@@ -3,6 +3,7 @@
 
 import sys
 from pathlib import Path
+from typing import Any
 
 try:
     import utils
@@ -17,19 +18,65 @@ utils.log_script_start("metric_alerts_export.py", "Metric Alerts & Activity Log 
 
 log = utils.get_logger()
 
+_WEBTEST_ODATA_TYPE = "Microsoft.Azure.Monitor.WebtestLocationAvailabilityCriteria"
+_DYNAMIC_CRITERION_TYPE = "DynamicThresholdCriterion"
+
+
+def _cell(value: Any) -> Any:
+    """Keep numeric zero: only None becomes blank. Whole-number floats from the API render as ints."""
+    if value is None:
+        return ""
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return value
+
+
+def _format_duration(value: Any) -> str:
+    if value is None:
+        return ""
+    if hasattr(value, "total_seconds"):
+        return f"{int(value.total_seconds() / 60)}m"
+    return utils.s(value)
+
+
+def _format_dimensions(dimensions) -> str:
+    if not dimensions:
+        return ""
+    parts = []
+    for d in dimensions:
+        values = getattr(d, "values", None) or []
+        parts.append(f"{utils.s(getattr(d, 'name', None))} {utils.s(getattr(d, 'operator', None))} "
+                     f"{','.join(utils.s(v) for v in values)}")
+    return " [" + "; ".join(parts) + "]"
+
+
+def _format_metric_criterion(crit) -> str:
+    metric = utils.s(getattr(crit, "metric_name", None))
+    operator = utils.s(getattr(crit, "operator", None))
+    aggregation = utils.s(getattr(crit, "time_aggregation", None))
+    subject = f"{aggregation}({metric})" if aggregation else metric
+    dimensions = _format_dimensions(getattr(crit, "dimensions", None))
+
+    if utils.s(getattr(crit, "criterion_type", None)) == _DYNAMIC_CRITERION_TYPE:
+        sensitivity = utils.s(getattr(crit, "alert_sensitivity", None))
+        periods = getattr(crit, "failing_periods", None)
+        min_failing = _cell(getattr(periods, "min_failing_periods_to_alert", None))
+        evaluation = _cell(getattr(periods, "number_of_evaluation_periods", None))
+        return f"{subject} {operator} dynamic(sensitivity={sensitivity}, failing {min_failing}/{evaluation}){dimensions}"
+
+    threshold = _cell(getattr(crit, "threshold", None))
+    return f"{subject} {operator} {threshold}{dimensions}"
+
 
 def _format_criteria(criteria) -> str:
     if not criteria:
         return ""
-    parts = []
-    metric_triggers = getattr(criteria, "all_of", None) or []
-    for crit in metric_triggers:
-        metric = getattr(crit, "metric_name", "") or ""
-        operator = getattr(crit, "operator", "") or ""
-        threshold = getattr(crit, "threshold", "") or ""
-        if metric:
-            parts.append(f"{metric} {operator} {threshold}")
-    return "; ".join(parts) if parts else str(criteria)
+    if utils.s(getattr(criteria, "odata_type", None)) == _WEBTEST_ODATA_TYPE:
+        web_test = utils.s(getattr(criteria, "web_test_id", None)).split("/")[-1]
+        failed = _cell(getattr(criteria, "failed_location_count", None))
+        return f"Webtest {web_test}: failedLocationCount={failed}"
+    parts = [_format_metric_criterion(crit) for crit in getattr(criteria, "all_of", None) or []]
+    return "; ".join(parts) if parts else utils.s(getattr(criteria, "odata_type", None))
 
 
 def _format_action_groups(actions) -> str:
@@ -37,7 +84,7 @@ def _format_action_groups(actions) -> str:
         return ""
     names = []
     for a in actions:
-        ag_id = getattr(a, "action_group_id", "") or ""
+        ag_id = utils.s(getattr(a, "action_group_id", None))
         names.append(ag_id.split("/")[-1] if ag_id else "")
     return ", ".join(n for n in names if n)
 
@@ -48,6 +95,31 @@ def _format_scopes(scopes) -> str:
     return ", ".join(s.split("/")[-1] if "/" in s else s for s in scopes)
 
 
+def _yes_no(value: Any) -> str:
+    if value is None:
+        return ""
+    return "Yes" if value else "No"
+
+
+def _build_metric_alert_row(alert) -> dict:
+    alert_id = utils.s(getattr(alert, "id", None))
+    scopes = getattr(alert, "scopes", None) or []
+    return {
+        "Alert Name": utils.s(getattr(alert, "name", None)),
+        "Resource Group": utils.extract_resource_group(alert_id),
+        "Severity": _cell(getattr(alert, "severity", None)),
+        "Enabled": "Yes" if getattr(alert, "enabled", False) else "No",
+        "Target Resource": _format_scopes(scopes),
+        "Condition": _format_criteria(getattr(alert, "criteria", None)),
+        "Window Size": _format_duration(getattr(alert, "window_size", None)),
+        "Action Groups": _format_action_groups(getattr(alert, "actions", None)),
+        "Description": utils.s(getattr(alert, "description", None)),
+        "Evaluation Frequency": _format_duration(getattr(alert, "evaluation_frequency", None)),
+        "Auto Mitigate": _yes_no(getattr(alert, "auto_mitigate", None)),
+        "Scope IDs": "; ".join(utils.s(s) for s in scopes),
+    }
+
+
 def collect_metric_alerts(subscription_id: str) -> list:
     client = utils.get_azure_client("monitor", subscription_id)
     log.info("Listing metric alert rules for subscription %s", subscription_id)
@@ -55,25 +127,7 @@ def collect_metric_alerts(subscription_id: str) -> list:
     rows = []
     try:
         for alert in client.metric_alerts.list_by_subscription():
-            alert_id = getattr(alert, "id", "") or ""
-            rg = utils.extract_resource_group(alert_id)
-
-            window = getattr(alert, "window_size", "") or ""
-            if hasattr(window, "total_seconds"):
-                mins = int(window.total_seconds() / 60)
-                window = f"{mins}m"
-
-            rows.append({
-                "Alert Name": getattr(alert, "name", "") or "",
-                "Resource Group": rg,
-                "Severity": getattr(alert, "severity", "") or "",
-                "Enabled": "Yes" if getattr(alert, "enabled", False) else "No",
-                "Target Resource": _format_scopes(getattr(alert, "scopes", None)),
-                "Condition": _format_criteria(getattr(alert, "criteria", None)),
-                "Window Size": str(window),
-                "Action Groups": _format_action_groups(getattr(alert, "actions", None)),
-                "Description": getattr(alert, "description", "") or "",
-            })
+            rows.append(_build_metric_alert_row(alert))
     except Exception as e:
         log.warning("Failed to list metric alerts: %s", e)
 

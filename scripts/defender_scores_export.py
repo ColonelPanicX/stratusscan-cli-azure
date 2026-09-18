@@ -67,7 +67,7 @@ def collect_defender_plans(subscription_id: str) -> list:
 
 def main(subscription_id: str, subscription_name: str) -> None:
     environment = utils.detect_environment()
-    if not utils.is_service_available_in_environment("resource", environment):
+    if not utils.is_service_available_in_environment("security", environment):
         sys.exit(0)
 
     score_rows = collect_secure_scores(subscription_id)

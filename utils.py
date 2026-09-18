@@ -238,6 +238,25 @@ def _enum_to_value(value: Any) -> Any:
     return value.value if isinstance(value, enum.Enum) else value
 
 
+# OWASP "CSV Injection": a cell starting with any of these is evaluated as a
+# formula by spreadsheet applications. Tags, names and descriptions come from
+# the tenant, so they are attacker-controlled input.
+# openpyxl types a str starting with "=" as a formula; every other str stays a
+# plain string cell in xlsx, so only "=" needs neutralizing.
+_FORMULA_TRIGGERS = ("=",)
+
+
+def _guard_formula(value: Any) -> Any:
+    """Prefix a str cell with ' when it would otherwise be typed as a formula. Non-str values pass through."""
+    if isinstance(value, str) and value.startswith(_FORMULA_TRIGGERS):
+        return "'" + value
+    return value
+
+
+def _to_cell(value: Any) -> Any:
+    return _guard_formula(_enum_to_value(value))
+
+
 def _normalize_cells(df):
     from pandas.api.types import is_bool_dtype, is_datetime64_any_dtype, is_numeric_dtype
 
@@ -248,7 +267,7 @@ def _normalize_cells(df):
         # object dtype would skip exactly the columns that need normalizing.
         if is_numeric_dtype(dtype) or is_bool_dtype(dtype) or is_datetime64_any_dtype(dtype):
             continue
-        out[col] = out[col].map(_enum_to_value)
+        out[col] = out[col].map(_to_cell)
     return out
 
 

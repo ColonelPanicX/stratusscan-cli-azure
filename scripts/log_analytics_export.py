@@ -3,6 +3,7 @@
 
 import sys
 from pathlib import Path
+from typing import Any
 
 try:
     import utils
@@ -18,6 +19,37 @@ utils.log_script_start("log_analytics_export.py", "Log Analytics Workspaces Expo
 log = utils.get_logger()
 
 
+def _format_daily_cap(quota: Any) -> str:
+    """dailyQuotaGb: -1 means unlimited (Microsoft.OperationalInsights WorkspaceCapping)."""
+    if quota is None:
+        return ""
+    if quota == -1:
+        return "No cap"
+    return f"{quota} GB"
+
+
+def _iso(value: Any) -> str:
+    return value.isoformat() if hasattr(value, "isoformat") else utils.s(value)
+
+
+def _build_row(ws) -> dict:
+    ws_id = utils.s(getattr(ws, "id", None))
+    cap = getattr(ws, "workspace_capping", None)
+    return {
+        "Workspace Name": utils.s(getattr(ws, "name", None)),
+        "Resource Group": utils.extract_resource_group(ws_id),
+        "Location": utils.s(getattr(ws, "location", None)),
+        "SKU": utils.s(getattr(getattr(ws, "sku", None), "name", None)),
+        "Retention (days)": getattr(ws, "retention_in_days", "") or "",
+        "Daily Cap": _format_daily_cap(getattr(cap, "daily_quota_gb", None)),
+        "Provisioning State": utils.s(getattr(ws, "provisioning_state", None)),
+        "Created Date": _iso(getattr(ws, "created_date", None)),
+        "Modified Date": _iso(getattr(ws, "modified_date", None)),
+        "Public Network Access (Ingestion)": utils.s(getattr(ws, "public_network_access_for_ingestion", None)),
+        "Public Network Access (Query)": utils.s(getattr(ws, "public_network_access_for_query", None)),
+    }
+
+
 def collect_workspaces(subscription_id: str) -> list:
     client = utils.get_azure_client("loganalytics", subscription_id)
     log.info("Listing Log Analytics workspaces for subscription %s", subscription_id)
@@ -25,40 +57,7 @@ def collect_workspaces(subscription_id: str) -> list:
     rows = []
     try:
         for ws in client.workspaces.list():
-            ws_id = getattr(ws, "id", "") or ""
-            rg = utils.extract_resource_group(ws_id)
-
-            sku_name = ""
-            sku = getattr(ws, "sku", None)
-            if sku:
-                sku_name = getattr(sku, "name", "") or ""
-
-            daily_cap = ""
-            cap = getattr(ws, "workspace_capping", None)
-            if cap:
-                quota = getattr(cap, "daily_quota_gb", None)
-                if quota is not None and quota >= 0:
-                    daily_cap = f"{quota} GB"
-
-            created = getattr(ws, "created_date", "") or ""
-            if hasattr(created, "isoformat"):
-                created = created.isoformat()
-
-            modified = getattr(ws, "modified_date", "") or ""
-            if hasattr(modified, "isoformat"):
-                modified = modified.isoformat()
-
-            rows.append({
-                "Workspace Name": getattr(ws, "name", "") or "",
-                "Resource Group": rg,
-                "Location": getattr(ws, "location", "") or "",
-                "SKU": sku_name,
-                "Retention (days)": getattr(ws, "retention_in_days", "") or "",
-                "Daily Cap": daily_cap,
-                "Provisioning State": getattr(ws, "provisioning_state", "") or "",
-                "Created Date": created,
-                "Modified Date": modified,
-            })
+            rows.append(_build_row(ws))
     except Exception as e:
         log.warning("Failed to list Log Analytics workspaces: %s", e)
 
