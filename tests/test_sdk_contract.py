@@ -122,6 +122,17 @@ def test_government_credential_is_a_plain_default_credential(monkeypatch):
         ("security", "alerts", "list"),
         ("security", "regulatory_compliance_standards", "list"),
         ("security", "regulatory_compliance_controls", "list"),
+        ("recoveryservices", "vaults", "list_by_subscription_id"),
+        ("recoveryservicesbackup", "backup_protected_items", "list"),
+        ("recoveryservicesbackup", "backup_policies", "list"),
+        ("recoveryservicesbackup", "backup_resource_vault_configs", "get"),
+        ("cognitiveservices", "accounts", "list"),
+        ("network", "web_application_firewall_policies", "list_all"),
+        ("web", "app_service_plans", "list"),
+        ("compute", "disk_encryption_sets", "list"),
+        ("compute", "disks", "list"),
+        ("compute", "snapshots", "list"),
+        ("compute", "images", "list"),
     ],
 )
 def test_operation_group_and_method_exist(service, operation_group, method):

@@ -60,7 +60,7 @@ cli_ui.py                 # menus, prompts, status panel — the only input() in
 utils.py                  # shared library — print-free
 bootstrap.py              # stdlib-only dependency installer, called from main()
 config-template.json      # shipped config shape; config.json itself is untracked
-scripts/                  # all 75 exporters — flat directory, no subdirs
+scripts/                  # all 80 exporters — flat directory, no subdirs
   # Tier 1 (13)
   subscriptions_export.py
   resource_groups_export.py
@@ -75,13 +75,15 @@ scripts/                  # all 75 exporters — flat directory, no subdirs
   key_vault_export.py
   key_vault_objects_export.py
   role_assignments_export.py
-  # Tier 2 (41)
+  # Tier 2 (46)
   aks_clusters_export.py
   container_registry_export.py
   container_apps_export.py
   container_instances_export.py
+  cognitive_services_export.py
   app_service_export.py
   function_apps_export.py
+  app_service_plans_export.py
   azure_sql_export.py
   sql_managed_instance_export.py
   cosmos_db_export.py
@@ -99,9 +101,11 @@ scripts/                  # all 75 exporters — flat directory, no subdirs
   application_gateway_export.py
   azure_firewall_export.py
   firewall_policy_rules_export.py
+  waf_policies_export.py
   route_tables_export.py
   vnet_peerings_export.py
   snapshots_export.py
+  disk_encryption_sets_export.py
   availability_sets_export.py
   private_endpoints_export.py
   nat_gateways_export.py
@@ -117,6 +121,7 @@ scripts/                  # all 75 exporters — flat directory, no subdirs
   automation_accounts_export.py
   batch_accounts_export.py
   recovery_services_vaults_export.py
+  backup_items_export.py
   # Governance (14)
   policy_assignments_export.py
   management_groups_export.py
@@ -277,7 +282,7 @@ All files land in `output/`.
 
 | Version | Scope |
 |---|---|
-| v0.1.0 (current) | 75 exporters, Public + Government environments, subscription selector |
+| v0.1.0 (current) | 80 exporters, Public + Government environments, subscription selector |
 | v0.2.0 | Resource Graph Smart Scan, Entra ID exporters (Graph SDK), pricing data |
 | v0.3.0+ | Multi-tenant scanning, Textual TUI |
 

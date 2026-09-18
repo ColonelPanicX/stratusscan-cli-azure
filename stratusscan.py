@@ -65,8 +65,10 @@ TIER2_EXPORTERS = [
     ("Container Registries (ACR)",     "container_registry_export.py"),
     ("Container Apps",                 "container_apps_export.py"),
     ("Container Instances (ACI)",      "container_instances_export.py"),
+    ("AI / Cognitive Services",        "cognitive_services_export.py"),
     ("App Service / Web Apps",         "app_service_export.py"),
     ("Function Apps",                  "function_apps_export.py"),
+    ("App Service Plans",              "app_service_plans_export.py"),
     ("Azure SQL Databases",            "azure_sql_export.py"),
     ("SQL Managed Instances",          "sql_managed_instance_export.py"),
     ("Cosmos DB Accounts",             "cosmos_db_export.py"),
@@ -84,9 +86,11 @@ TIER2_EXPORTERS = [
     ("Application Gateways",           "application_gateway_export.py"),
     ("Azure Firewalls",                "azure_firewall_export.py"),
     ("Firewall Policy Rules",          "firewall_policy_rules_export.py"),
+    ("WAF Policies (App Gateway)",     "waf_policies_export.py"),
     ("Route Tables",                   "route_tables_export.py"),
     ("VNet Peerings",                  "vnet_peerings_export.py"),
     ("Snapshots",                      "snapshots_export.py"),
+    ("Disk Encryption Sets",           "disk_encryption_sets_export.py"),
     ("Availability Sets",              "availability_sets_export.py"),
     ("Private Endpoints",              "private_endpoints_export.py"),
     ("NAT Gateways",                   "nat_gateways_export.py"),
@@ -102,6 +106,7 @@ TIER2_EXPORTERS = [
     ("Automation Accounts",            "automation_accounts_export.py"),
     ("Batch Accounts",                 "batch_accounts_export.py"),
     ("Recovery Services Vaults",       "recovery_services_vaults_export.py"),
+    ("Backup Items & Policies",        "backup_items_export.py"),
 ]
 
 GOVERNANCE_EXPORTERS = [
@@ -150,7 +155,7 @@ TENANT_SCOPED_EXPORTERS = frozenset({
     "management_groups_export.py",
 })
 
-# Tier 2 is 41 exporters; the submenu groups them so the list can be scanned.
+# Tier 2 is 46 exporters; the submenu groups them so the list can be scanned.
 # Numbering stays continuous — the headings are labels, not menu entries.
 TIER2_CATEGORIES: list[tuple[str, list[str]]] = [
     ("Compute & Containers", [
@@ -158,10 +163,13 @@ TIER2_CATEGORIES: list[tuple[str, list[str]]] = [
         "container_registry_export.py",
         "container_apps_export.py",
         "container_instances_export.py",
+        "cognitive_services_export.py",
         "app_service_export.py",
         "function_apps_export.py",
+        "app_service_plans_export.py",
         "availability_sets_export.py",
         "snapshots_export.py",
+        "disk_encryption_sets_export.py",
     ]),
     ("Databases", [
         "azure_sql_export.py",
@@ -176,6 +184,7 @@ TIER2_CATEGORIES: list[tuple[str, list[str]]] = [
         "application_gateway_export.py",
         "azure_firewall_export.py",
         "firewall_policy_rules_export.py",
+        "waf_policies_export.py",
         "route_tables_export.py",
         "vnet_peerings_export.py",
         "private_endpoints_export.py",
@@ -205,6 +214,7 @@ TIER2_CATEGORIES: list[tuple[str, list[str]]] = [
         "automation_accounts_export.py",
         "batch_accounts_export.py",
         "recovery_services_vaults_export.py",
+        "backup_items_export.py",
     ]),
 ]
 
