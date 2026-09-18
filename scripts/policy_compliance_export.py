@@ -27,23 +27,29 @@ def collect_states(subscription_id: str) -> list:
     )
 
 
+def _build_detail_row(st) -> dict:
+    resource_id = utils.s(getattr(st, "resource_id", None))
+    group_names = getattr(st, "policy_definition_group_names", None) or []
+    return {
+        "Resource": resource_id.split("/")[-1],
+        "Resource Type": utils.s(getattr(st, "resource_type", None)),
+        "Resource Group": utils.extract_resource_group(resource_id),
+        "Location": utils.s(getattr(st, "resource_location", None)),
+        "Compliance State": utils.s(getattr(st, "compliance_state", None)),
+        "Policy Assignment": utils.s(getattr(st, "policy_assignment_name", None)),
+        "Policy Definition": utils.s(getattr(st, "policy_definition_name", None)),
+        "Definition Action": utils.s(getattr(st, "policy_definition_action", None)),
+        "Definition Category": utils.s(getattr(st, "policy_definition_category", None)),
+        "Timestamp": utils.s(getattr(st, "timestamp", None)),
+        "Policy Set Definition": utils.s(getattr(st, "policy_set_definition_name", None)),
+        "Definition Reference ID": utils.s(getattr(st, "policy_definition_reference_id", None)),
+        "Definition Group Names": ", ".join(utils.s(g) for g in group_names),
+        "Assignment Scope": utils.s(getattr(st, "policy_assignment_scope", None)),
+    }
+
+
 def _detail_rows(states: list) -> list:
-    rows = []
-    for st in states:
-        resource_id = getattr(st, "resource_id", "") or ""
-        rows.append({
-            "Resource": resource_id.split("/")[-1],
-            "Resource Type": getattr(st, "resource_type", "") or "",
-            "Resource Group": utils.extract_resource_group(resource_id),
-            "Location": getattr(st, "resource_location", "") or "",
-            "Compliance State": getattr(st, "compliance_state", "") or "",
-            "Policy Assignment": getattr(st, "policy_assignment_name", "") or "",
-            "Policy Definition": getattr(st, "policy_definition_name", "") or "",
-            "Definition Action": getattr(st, "policy_definition_action", "") or "",
-            "Definition Category": getattr(st, "policy_definition_category", "") or "",
-            "Timestamp": utils.s(getattr(st, "timestamp", None)) if getattr(st, "timestamp", None) else "",
-        })
-    return rows
+    return [_build_detail_row(st) for st in states]
 
 
 def _summary_rows(detail_rows: list) -> list:

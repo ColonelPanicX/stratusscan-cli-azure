@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
-"""StratusScanCLI-Azure — RBAC Role Assignments Export"""
+"""StratusScanCLI-Azure — RBAC Role Assignments Export
+
+Covers active Azure RBAC role assignments visible at subscription scope,
+including those inherited from management groups and the tenant root.
+Not covered: PIM-eligible assignments, classic administrators, deny assignments.
+"""
 
 import sys
 from pathlib import Path
+from typing import Any
 
 try:
     import utils
@@ -17,12 +23,30 @@ utils.log_script_start("role_assignments_export.py", "Azure RBAC Role Assignment
 
 log = utils.get_logger()
 
+_MANAGEMENT_GROUP_PREFIX = "/providers/microsoft.management/managementgroups/"
+
 
 def collect_role_assignments(subscription_id: str) -> list:
     client = utils.get_azure_client("authorization", subscription_id)
     scope = f"/subscriptions/{subscription_id}"
     log.info("Listing role assignments for subscription %s", subscription_id)
     return list(client.role_assignments.list_for_scope(scope))
+
+
+def collect_role_definitions(subscription_id: str) -> dict[str, Any]:
+    """Return {role definition GUID (lowercase): RoleDefinition} for every definition visible at subscription scope."""
+    client = utils.get_azure_client("authorization", subscription_id)
+    scope = f"/subscriptions/{subscription_id}"
+    log.info("Listing role definitions for subscription %s", subscription_id)
+    try:
+        return {
+            utils.s(rd.name).lower(): rd
+            for rd in client.role_definitions.list(scope=scope)
+            if getattr(rd, "name", None)
+        }
+    except Exception as e:
+        log.warning("Failed to list role definitions — Role Name/Role Type will be blank: %s", e)
+        return {}
 
 
 def _role_name_from_id(role_definition_id: str) -> str:
@@ -34,15 +58,43 @@ def _role_name_from_id(role_definition_id: str) -> str:
 
 
 def _scope_type(scope: str) -> str:
-    """Classify an assignment scope as subscription/resource-group/resource."""
+    """Classify an assignment scope as tenant root / management group / subscription / resource group / resource."""
     if not scope:
         return ""
+    if scope.strip() == "/":
+        return "Root (Tenant)"
+    if scope.lower().startswith(_MANAGEMENT_GROUP_PREFIX):
+        return "Management Group"
     parts = scope.strip("/").split("/")
     if len(parts) == 2 and parts[0].lower() == "subscriptions":
         return "Subscription"
-    if len(parts) == 4 and parts[2].lower() == "resourcegroups":
+    if len(parts) == 4 and parts[0].lower() == "subscriptions" and parts[2].lower() == "resourcegroups":
         return "Resource Group"
     return "Resource"
+
+
+def _iso(value: Any) -> str:
+    return value.strftime("%Y-%m-%d %H:%M:%S") if hasattr(value, "strftime") else utils.s(value)
+
+
+def _build_row(ra, role_definitions: dict[str, Any]) -> dict[str, Any]:
+    role_guid = _role_name_from_id(utils.s(ra.role_definition_id))
+    role = role_definitions.get(role_guid.lower())
+    return {
+        "Assignment ID": utils.s(ra.name),
+        "Principal ID": utils.s(ra.principal_id),
+        "Principal Type": utils.s(ra.principal_type),
+        "Role Definition ID": role_guid,
+        "Role Name": utils.s(getattr(role, "role_name", None)),
+        "Role Type": utils.s(getattr(role, "role_type", None)),
+        "Scope": utils.s(ra.scope),
+        "Scope Type": _scope_type(utils.s(ra.scope)),
+        "Created On": _iso(ra.created_on),
+        "Condition": utils.s(getattr(ra, "condition", None)),
+        "Description": utils.s(getattr(ra, "description", None)),
+        "Created By": utils.s(getattr(ra, "created_by", None)),
+        "Updated On": _iso(getattr(ra, "updated_on", None)),
+    }
 
 
 def main(subscription_id: str, subscription_name: str) -> None:
@@ -55,20 +107,8 @@ def main(subscription_id: str, subscription_name: str) -> None:
         print("No role assignments found.")
         return
 
-    rows = []
-    for ra in assignments:
-        rows.append({
-            "Assignment ID": ra.name,
-            "Principal ID": ra.principal_id or "",
-            "Principal Type": utils.s(ra.principal_type),
-            "Role Definition ID": _role_name_from_id(ra.role_definition_id or ""),
-            "Scope": ra.scope or "",
-            "Scope Type": _scope_type(ra.scope or ""),
-            "Created On": (
-                ra.created_on.strftime("%Y-%m-%d %H:%M:%S")
-                if ra.created_on else ""
-            ),
-        })
+    role_definitions = collect_role_definitions(subscription_id)
+    rows = [_build_row(ra, role_definitions) for ra in assignments]
 
     df = pd.DataFrame(rows)
     filename = utils.create_export_filename(subscription_name, "role-assignments", "all")

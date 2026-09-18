@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
-"""StratusScanCLI-Azure — Defender Security Assessments Export"""
+"""StratusScanCLI-Azure — Defender Security Assessments Export
+
+Assessments are listed at subscription scope; the list response carries no
+metadata, so severity, category, description and remediation are joined from a
+single assessments_metadata.list() call keyed by the assessment GUID.
+"""
 
 import sys
 from pathlib import Path
+from typing import Any
 
 try:
     import utils
@@ -18,23 +24,72 @@ utils.log_script_start("defender_assessments_export.py", "Defender Security Asse
 log = utils.get_logger()
 
 
+def _resource_type_from_id(resource_id: str) -> str:
+    parts = [p for p in resource_id.split("/") if p]
+    lowered = [p.lower() for p in parts]
+    if "providers" in lowered:
+        p = len(lowered) - 1 - lowered[::-1].index("providers")
+        if p + 1 >= len(parts):
+            return ""
+        return "/".join([parts[p + 1]] + parts[p + 2::2])
+    if len(lowered) >= 4 and lowered[0] == "subscriptions" and lowered[2] == "resourcegroups":
+        return "Microsoft.Resources/subscriptions/resourceGroups"
+    if len(lowered) == 2 and lowered[0] == "subscriptions":
+        return "Microsoft.Resources/subscriptions"
+    return ""
+
+
 def _extract_resource_info(resource_details) -> tuple:
+    """Return (source, resource_id, resource_name, resource_type) for an assessment's resourceDetails."""
     if not resource_details:
-        return "", "", ""
-    source = getattr(resource_details, "source", None) or resource_details
-    rid = getattr(source, "id", "") or ""
-    parts = rid.split("/") if rid else []
-    rname = parts[-1] if len(parts) > 1 else ""
-    rtype = ""
-    if len(parts) >= 2:
-        rtype = "/".join(parts[-2:]) if not parts[-2].startswith("Microsoft.") else "/".join(parts[-3:-1])
-    return rid, rname, rtype
+        return "", "", "", ""
+    source = utils.s(getattr(resource_details, "source", None))
+    rid = utils.s(getattr(resource_details, "id", None))
+    if rid:
+        return source, rid, rid.rstrip("/").split("/")[-1], _resource_type_from_id(rid)
+    machine_name = utils.s(getattr(resource_details, "machine_name", None))
+    source_computer_id = utils.s(getattr(resource_details, "source_computer_id", None))
+    return source, source_computer_id, machine_name, ""
 
 
-def _status_code(status) -> str:
-    if not status:
-        return ""
-    return utils.s(getattr(status, "code", None))
+def _iso(value: Any) -> str:
+    return value.isoformat() if hasattr(value, "isoformat") else utils.s(value)
+
+
+def collect_assessment_metadata(client) -> dict[str, Any]:
+    """Return {assessment GUID: SecurityAssessmentMetadataResponse}; empty when the call fails."""
+    log.info("Listing assessment metadata")
+    try:
+        return {utils.s(m.name): m for m in client.assessments_metadata.list() if getattr(m, "name", None)}
+    except Exception as e:
+        log.warning("Failed to list assessment metadata — severity/category/remediation will be blank: %s", e)
+        return {}
+
+
+def _build_row(a, metadata_map: dict[str, Any]) -> dict[str, Any]:
+    name = utils.s(getattr(a, "name", None))
+    metadata = metadata_map.get(name) or getattr(a, "metadata", None)
+    status = getattr(a, "status", None)
+    source, rid, rname, rtype = _extract_resource_info(getattr(a, "resource_details", None))
+
+    categories = getattr(metadata, "categories", None) if metadata else None
+    return {
+        "Assessment Name": name,
+        "Display Name": utils.s(getattr(a, "display_name", None)) or utils.s(getattr(metadata, "display_name", None)),
+        "Status": utils.s(getattr(status, "code", None)),
+        "Severity": utils.s(getattr(metadata, "severity", None)),
+        "Category": ", ".join(utils.s(c) for c in categories) if categories else "",
+        "Resource ID": rid,
+        "Resource Name": rname,
+        "Resource Type": rtype,
+        "Description": utils.s(getattr(metadata, "description", None)),
+        "Remediation": utils.s(getattr(metadata, "remediation_description", None)),
+        "Resource Source": source,
+        "Status Cause": utils.s(getattr(status, "cause", None)),
+        "Status Description": utils.s(getattr(status, "description", None)),
+        "First Evaluation Date": _iso(getattr(status, "first_evaluation_date", None)),
+        "Status Change Date": _iso(getattr(status, "status_change_date", None)),
+    }
 
 
 def collect_assessments(subscription_id: str) -> list:
@@ -42,42 +97,14 @@ def collect_assessments(subscription_id: str) -> list:
     log.info("Listing security assessments for subscription %s", subscription_id)
 
     rows = []
+    metadata_map: dict[str, Any] = {}
+    metadata_loaded = False
     try:
         for a in client.assessments.list(scope=f"/subscriptions/{subscription_id}"):
-            status = getattr(a, "status", None)
-            status_code = _status_code(status)
-
-            metadata = getattr(a, "metadata", None) if hasattr(a, "metadata") else None
-            display_name = ""
-            severity = ""
-            category = ""
-            description = ""
-            remediation = ""
-
-            if metadata:
-                display_name = getattr(metadata, "display_name", "") or ""
-                severity = getattr(metadata, "severity", "") or ""
-                categories = getattr(metadata, "categories", None)
-                if categories:
-                    category = ", ".join(utils.s(c) for c in categories)
-                description = getattr(metadata, "description", "") or ""
-                remediation = getattr(metadata, "remediation_description", "") or ""
-
-            resource_details = getattr(a, "resource_details", None)
-            rid, rname, rtype = _extract_resource_info(resource_details)
-
-            rows.append({
-                "Assessment Name": getattr(a, "name", "") or "",
-                "Display Name": display_name or getattr(a, "display_name", "") or "",
-                "Status": status_code,
-                "Severity": severity,
-                "Category": category,
-                "Resource ID": rid,
-                "Resource Name": rname,
-                "Resource Type": rtype,
-                "Description": description,
-                "Remediation": remediation,
-            })
+            if not metadata_loaded:
+                metadata_map = collect_assessment_metadata(client)
+                metadata_loaded = True
+            rows.append(_build_row(a, metadata_map))
     except Exception as e:
         log.warning("Failed to list assessments: %s", e)
 
@@ -86,7 +113,7 @@ def collect_assessments(subscription_id: str) -> list:
 
 def main(subscription_id: str, subscription_name: str) -> None:
     environment = utils.detect_environment()
-    if not utils.is_service_available_in_environment("resource", environment):
+    if not utils.is_service_available_in_environment("security", environment):
         sys.exit(0)
 
     rows = collect_assessments(subscription_id)
