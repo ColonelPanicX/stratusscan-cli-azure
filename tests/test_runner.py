@@ -3,6 +3,7 @@
 import io
 import json
 import logging
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -15,6 +16,9 @@ import utils
 def harness(monkeypatch, tmp_path):
     """Manifest under tmp_path; the real console log handler (WARNING, stdout) redirected to a buffer."""
     manifest = tmp_path / ".run-manifest.jsonl"
+    # run_exporter parses the exporter's own flags off sys.argv, which under pytest
+    # holds pytest's arguments
+    monkeypatch.setattr(sys, "argv", ["widgets"])
     monkeypatch.setattr(utils, "manifest_path", lambda: manifest)
     monkeypatch.setattr(utils, "resolve_target_subscription", lambda: ("sub-1", "Sub One"))
     monkeypatch.setenv("STRATUSSCAN_RUN_ID", "t-run")
@@ -284,3 +288,79 @@ def test_script_identity_uses_defining_module_file_and_docstring():
     file, description = runner._script_identity(runner.run_exporter)
     assert file == "runner.py"
     assert description == "StratusScanCLI-Azure — Exporter Runner"
+
+
+# ---------------------------------------------------------------------------
+# Per-exporter flags
+# ---------------------------------------------------------------------------
+
+def _ok_main(sub_id, sub_name):
+    return utils.ExportResult(rows=1, filename=None)
+
+
+def test_subscription_flags_beat_the_injected_environment(monkeypatch):
+    monkeypatch.setenv("STRATUSSCAN_SUBSCRIPTION_ID", "env-sub")
+    monkeypatch.setenv("STRATUSSCAN_SUBSCRIPTION_NAME", "Env Sub")
+
+    runner.apply_args("widgets", ["--subscription-id", "flag-sub", "--subscription-name", "Flag Sub"])
+
+    assert utils.resolve_target_subscription() == ("flag-sub", "Flag Sub")
+
+
+def test_subscription_id_flag_alone_drops_a_stale_injected_name(monkeypatch):
+    monkeypatch.setenv("STRATUSSCAN_SUBSCRIPTION_ID", "env-sub")
+    monkeypatch.setenv("STRATUSSCAN_SUBSCRIPTION_NAME", "Env Sub")
+
+    runner.apply_args("widgets", ["--subscription-id", "flag-sub"])
+
+    assert utils.resolve_target_subscription() == ("flag-sub", "flag-sub")
+
+
+def test_output_dir_flag_redirects_workbook_manifest_and_archive(monkeypatch, tmp_path):
+    target = tmp_path / "evidence"
+    # setenv (not delenv) so pytest restores the variable apply_args writes below
+    monkeypatch.setenv(utils.OUTPUT_DIR_ENV, str(tmp_path / "placeholder"))
+
+    runner.apply_args("widgets", ["--output-dir", str(target)])
+
+    assert utils.output_dir() == target
+    assert utils.create_export_filename("Sub One", "widgets", "all").startswith(str(target))
+    assert utils.manifest_path() == target / ".run-manifest.jsonl"
+    (target / "a.xlsx").write_text("x", encoding="utf-8")
+    assert utils.archive_outputs("tier1").startswith(str(target))
+
+
+def test_output_dir_environment_variable_is_used_without_the_flag(monkeypatch, tmp_path):
+    monkeypatch.setenv(utils.OUTPUT_DIR_ENV, str(tmp_path / "from-env"))
+
+    runner.apply_args("widgets", [])
+
+    assert utils.output_dir() == tmp_path / "from-env"
+
+
+def test_verbose_flag_lifts_the_console_handler_to_info(harness, monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["widgets", "--verbose"])
+    levels = []
+    monkeypatch.setattr(utils, "set_console_level", lambda level: levels.append(level))
+
+    _run(_ok_main, harness, capsys)
+
+    assert levels == [logging.INFO]
+
+
+def test_help_names_the_exporter_and_exits_0(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", ["widgets", "--help"])
+
+    with pytest.raises(SystemExit) as info:
+        runner.apply_args("widgets")
+
+    out = capsys.readouterr().out
+    assert info.value.code == 0
+    assert "usage: widgets" in out
+    assert "--subscription-id" in out and "--output-dir" in out
+
+
+def test_unknown_flag_exits_2(monkeypatch):
+    with pytest.raises(SystemExit) as info:
+        runner.apply_args("widgets", ["--nope"])
+    assert info.value.code == 2

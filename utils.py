@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import platform
+import re
 import sys
 import threading
 import warnings
@@ -116,6 +117,13 @@ def setup_logging(
     return logger
 
 
+def set_console_level(level: int) -> None:
+    """Raise or lower the console handler only; the file handler stays at DEBUG."""
+    for handler in get_logger().handlers:
+        if isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler):
+            handler.setLevel(level)
+
+
 def get_logger() -> logging.Logger:
     global logger, _logging_configured
     if logger is None:
@@ -167,18 +175,39 @@ def get_current_timestamp() -> str:
 
 def _sanitize_name(name: str) -> str:
     """Replace characters that are unsafe in filenames with hyphens."""
-    import re
     return re.sub(r"[^\w\-]", "-", name).strip("-")
+
+
+OUTPUT_DIR_ENV = "STRATUSSCAN_OUTPUT_DIR"
+
+
+def output_dir() -> Path:
+    """
+    Return the directory every artifact of a run lands in, creating it if needed.
+
+    Precedence: STRATUSSCAN_OUTPUT_DIR (what runner.py's --output-dir sets), then
+    config.json's output_dir, then output/ beside this module. A relative path is
+    resolved against the project root so a Cloud Shell `cd` cannot scatter exports.
+    Workbooks, the run manifest, the run report and the zip all route through here.
+    """
+    raw = os.environ.get(OUTPUT_DIR_ENV, "").strip()
+    if not raw:
+        configured = get_config().get("output_dir")
+        raw = configured.strip() if isinstance(configured, str) and configured.strip() else "output"
+    path = Path(raw).expanduser()
+    if not path.is_absolute():
+        path = Path(__file__).parent / path
+    path.mkdir(parents=True, exist_ok=True)
+    return path
 
 
 def create_export_filename(subscription_name: str, resource_type: str, suffix: str) -> str:
     """
     Return a full path to the output file.
 
-    Format: output/{SUBSCRIPTION-NAME}-{resource-type}-{suffix}-export-{MM.DD.YYYY}.xlsx
+    Format: {output_dir}/{SUBSCRIPTION-NAME}-{resource-type}-{suffix}-export-{MM.DD.YYYY}.xlsx
     """
-    out_dir = Path(__file__).parent / "output"
-    out_dir.mkdir(exist_ok=True)
+    out_dir = output_dir()
     safe_sub = _sanitize_name(subscription_name).upper()
     date_str = get_current_timestamp()
     filename = f"{safe_sub}-{resource_type}-{suffix}-export-{date_str}.xlsx"
@@ -223,12 +252,6 @@ def list_subscription_wide(operations: Any, *method_names: str) -> Any:
     )
 
 
-def _output_dir() -> Path:
-    out_dir = Path(__file__).parent / "output"
-    out_dir.mkdir(exist_ok=True)
-    return out_dir
-
-
 def _run_files(out_dir: Path, run_id: str) -> list[Path]:
     """Workbooks the manifest attributes to run_id, plus that run's report, that still exist."""
     files: dict[str, Path] = {}
@@ -252,10 +275,9 @@ def archive_outputs(label: str | None = None, run_id: str | None = None) -> str 
 
     Returns the zip path, or None if there are no exports to archive.
     """
-    import re
     import zipfile
 
-    out_dir = _output_dir()
+    out_dir = output_dir()
     if run_id:
         exports = _run_files(out_dir, run_id)
         stamp = re.sub(r"[^\w.\-]", "-", run_id).strip("-")
@@ -345,7 +367,7 @@ def get_run_id() -> str:
 
 
 def manifest_path() -> Path:
-    return _output_dir() / _MANIFEST_NAME
+    return output_dir() / _MANIFEST_NAME
 
 
 def record_run_result(**fields: Any) -> str | None:
@@ -586,6 +608,24 @@ def save_config(data: dict) -> None:
         with open(_CONFIG_PATH, "w", encoding="utf-8") as fh:
             json.dump(data, fh, indent=2)
         _config_cache = data
+
+
+def config_path() -> Path:
+    return _CONFIG_PATH
+
+
+def reload_config() -> dict:
+    """
+    Drop the cached config so the next read picks up a config.json written by
+    another process (configure.py runs as a subprocess of stratusscan.py).
+
+    Only the config cache is cleared: reloading the whole module would also reset
+    the credential and logger globals, which is what the old importlib.reload did.
+    """
+    global _config_cache
+    with _config_lock:
+        _config_cache = None
+    return get_config()
 
 
 # ---------------------------------------------------------------------------
@@ -903,6 +943,16 @@ def list_subscriptions() -> list[dict[str, str]]:
     return subs
 
 
+_SUBSCRIPTION_ID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE
+)
+
+
+def is_subscription_id(value: str) -> bool:
+    """True when value is a GUID — the only shape an Azure subscription ID takes."""
+    return bool(_SUBSCRIPTION_ID_RE.match(str(value).strip()))
+
+
 def get_subscription_name(subscription_id: str) -> str:
     """Return the display name for a subscription ID, or the ID itself on failure."""
     cfg = get_config()
@@ -931,61 +981,3 @@ def resolve_target_subscription() -> tuple:
     if not sub_id:
         return "", ""
     return sub_id, get_subscription_name(sub_id)
-
-
-# ---------------------------------------------------------------------------
-# Interactive menu (shared by stratusscan.py and configure.py)
-# ---------------------------------------------------------------------------
-
-def prompt_menu(
-    title: str,
-    options: list[str],
-    allow_back: bool = True,
-    allow_exit: bool = True,
-) -> int | str:
-    """
-    Display a numbered menu and return the user's choice.
-
-    In auto-run mode, returns 1 without prompting.
-
-    Returns:
-        int 1..N for a numbered choice,
-        'back' if user enters 'b',
-        'exit' if user enters 'x'.
-    """
-    if is_auto_run():
-        return 1
-
-    print(f"\n{title}")
-    print("=" * 64)
-    for i, opt in enumerate(options, 1):
-        print(f"  {i}. {opt}")
-    print("-" * 64)
-    footer = []
-    if allow_back:
-        footer.append("b. Back")
-    if allow_exit:
-        footer.append("x. Exit")
-    if footer:
-        print("  " + "    ".join(footer))
-    print("=" * 64)
-
-    valid = {str(i) for i in range(1, len(options) + 1)}
-    if allow_back:
-        valid.add("b")
-    if allow_exit:
-        valid.add("x")
-
-    while True:
-        try:
-            choice = input("Enter your choice: ").strip().lower()
-        except (KeyboardInterrupt, EOFError):
-            print()
-            return "exit" if allow_exit else "back"
-        if choice in valid:
-            if choice == "b":
-                return "back"
-            if choice == "x":
-                return "exit"
-            return int(choice)
-        print("Invalid choice. Please try again.")

@@ -9,6 +9,9 @@ that stratusscan.py reads for the run report.
 
 This module may print. utils.py may not.
 
+It also owns the flags an exporter accepts when it is run directly:
+    --subscription-id ID  --subscription-name NAME  --output-dir DIR  --verbose
+
 Exit codes:
     0   OK        workbook written
     1   FAILED    an exception escaped main()
@@ -18,6 +21,9 @@ Exit codes:
     130 INTERRUPTED
 """
 
+import argparse
+import logging
+import os
 import sys
 import time
 from collections.abc import Callable
@@ -67,6 +73,47 @@ AUTH_HINT = (
 IMPORT_HINT = "Hint: pip install the package named above, or run stratusscan.py to install dependencies."
 
 
+def build_parser(script_name: str) -> argparse.ArgumentParser:
+    """Flags every exporter accepts when run directly, out of stratusscan.py."""
+    parser = argparse.ArgumentParser(
+        prog=script_name,
+        description=f"StratusScanCLI-Azure exporter: {script_name}",
+    )
+    parser.add_argument(
+        "--subscription-id", metavar="ID",
+        help="subscription to export (overrides STRATUSSCAN_SUBSCRIPTION_ID and the configured default)",
+    )
+    parser.add_argument(
+        "--subscription-name", metavar="NAME",
+        help="display name used in the output filename (default: looked up from config)",
+    )
+    parser.add_argument(
+        "--output-dir", metavar="DIR",
+        help="directory for the workbook, run manifest and archive (overrides STRATUSSCAN_OUTPUT_DIR and config)",
+    )
+    parser.add_argument(
+        "--verbose", action="store_true",
+        help="show INFO-level progress on the console (the log file always has it)",
+    )
+    return parser
+
+
+def apply_args(script_name: str, argv: list[str] | None = None) -> argparse.Namespace:
+    """
+    Parse the exporter's own flags and push them into the environment the rest of
+    the run reads. Flags beat the env vars stratusscan.py injects, which beat config.
+    """
+    args = build_parser(script_name).parse_args(sys.argv[1:] if argv is None else argv)
+    if args.subscription_id:
+        os.environ["STRATUSSCAN_SUBSCRIPTION_ID"] = args.subscription_id
+        os.environ["STRATUSSCAN_SUBSCRIPTION_NAME"] = args.subscription_name or ""
+    if args.subscription_name:
+        os.environ["STRATUSSCAN_SUBSCRIPTION_NAME"] = args.subscription_name
+    if args.output_dir:
+        os.environ[utils.OUTPUT_DIR_ENV] = args.output_dir
+    return args
+
+
 def _log_failure(log, script_name: str, exc: BaseException, detail: str) -> None:
     """One-line record plus the traceback for the log file. The console handler
     sits at WARNING, so both stay out of the terminal — the print() is the console line."""
@@ -97,6 +144,7 @@ def run_exporter(main: Callable[[str, str], utils.ExportResult | None], script_n
     main returns utils.ExportResult, or None (treated as OK). Raising
     utils.NoResourcesFound means the primary listing was empty.
     """
+    args = apply_args(script_name)
     log = utils.get_logger()
     started = time.monotonic()
     sub_id, sub_name = "", ""
@@ -120,6 +168,8 @@ def run_exporter(main: Callable[[str, str], utils.ExportResult | None], script_n
 
     sub_id, sub_name = utils.resolve_target_subscription()
     utils.setup_logging(f"{script_name}-export", subscription_id=sub_id or None)
+    if args.verbose:
+        utils.set_console_level(logging.INFO)
     utils.log_script_start(*_script_identity(main))
     if not sub_id:
         print(NO_SUBSCRIPTION_MESSAGE)
