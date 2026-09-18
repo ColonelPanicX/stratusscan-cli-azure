@@ -35,7 +35,9 @@
     "Microsoft.Batch/*/read",
     "Microsoft.RecoveryServices/*/read",
     "Microsoft.CostManagement/*/read",
-    "Microsoft.CostManagement/query/action"
+    "Microsoft.CostManagement/query/action",
+    "Microsoft.PolicyInsights/policyStates/queryResults/action",
+    "Microsoft.PolicyInsights/policyStates/summarize/action"
   ],
   "NotActions": [],
   "DataActions": [],

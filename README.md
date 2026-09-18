@@ -21,7 +21,7 @@
 
 ---
 
-A Python CLI tool for exporting Azure resource inventories to Excel workbooks. Supports 21 Azure services across Public and US Government cloud environments, targeting infrastructure audits, FedRAMP evidence collection, and cost analysis.
+A Python CLI tool for exporting Azure resource inventories to Excel workbooks. 70 exporters across Public and US Government cloud environments, targeting infrastructure audits, FedRAMP evidence collection, and cost analysis.
 
 Sibling project to [StratusScan-CLI (AWS)](https://github.com/ColonelPanicX/StratusScan-CLI). Shares the same philosophy, output format, and architectural patterns — not a fork.
 
@@ -62,15 +62,9 @@ python stratusscan.py
 python configure.py
 ```
 
-### pip install (once published)
-
-```bash
-pip install stratusscan-cli-azure
-stratusscan-configure
-stratusscan
-```
-
-> **Note:** PyPI publishing is pending the first stable release.
+> **Clone and run.** StratusScan is not installed as a package — there are no
+> console commands to install. `python stratusscan.py` bootstraps its own
+> dependencies from `pyproject.toml` on first run. Python 3.10 or newer.
 
 ---
 
@@ -91,7 +85,9 @@ No profile management or custom credential handling is needed — one call cover
 
 ## Configuration
 
-Run the configuration wizard before first use:
+`configure.py` is **optional** — `stratusscan.py` auto-detects the cloud and
+discovers every accessible subscription on first run. Run the wizard only to
+narrow the scope or persist a choice:
 
 ```bash
 python configure.py
@@ -162,7 +158,7 @@ STRATUSSCAN_AUTO_RUN=1 python scripts/virtual_machines_export.py
 python stratusscan.py
 ```
 
-Select **Tier 1** or **Tier 2** from the menu, then pick an individual exporter or run all. Exports are saved to `output/` as `.xlsx` files.
+Pick a tier — **Tier 1** (core infrastructure), **Tier 2** (workloads), **Governance** or **Monitoring** — then an individual exporter, or run every exporter in that tier. Exports are saved to `output/` as `.xlsx` files.
 
 When multiple subscriptions are accessible, **Run All** scans a single subscription by default (the configured default, otherwise the first) to stay within the Cloud Shell session timeout. Choosing Run All prompts for scope, where scanning every subscription is an explicit opt-in. Running an individual exporter still fans out across all accessible subscriptions.
 
@@ -180,36 +176,95 @@ python scripts/role_assignments_export.py
 
 ## Supported Azure Resources
 
-### Tier 1 — Core Infrastructure (11 exporters)
+### Tier 1 — Core Infrastructure (13 exporters)
 
 | Script | Azure Service |
 |---|---|
 | `subscriptions_export.py` | Subscriptions |
 | `resource_groups_export.py` | Resource Groups |
 | `virtual_machines_export.py` | Virtual Machines |
+| `vmss_export.py` | VM Scale Sets |
 | `managed_disks_export.py` | Managed Disks |
-| `virtual_networks_export.py` | Virtual Networks (VNets) |
+| `virtual_networks_export.py` | Virtual Networks |
 | `subnets_export.py` | Subnets |
 | `network_security_groups_export.py` | Network Security Groups |
 | `public_ips_export.py` | Public IP Addresses |
 | `storage_accounts_export.py` | Storage Accounts |
-| `key_vault_export.py` | Key Vault |
+| `key_vault_export.py` | Key Vaults |
+| `key_vault_objects_export.py` | Key Vault Objects (Keys/Secrets/Certs) |
 | `role_assignments_export.py` | RBAC Role Assignments |
 
-### Tier 2 — Common Workloads (10 exporters)
+### Tier 2 — Workloads (41 exporters)
 
 | Script | Azure Service |
 |---|---|
 | `aks_clusters_export.py` | AKS Clusters |
+| `container_registry_export.py` | Container Registries (ACR) |
+| `container_apps_export.py` | Container Apps |
+| `container_instances_export.py` | Container Instances (ACI) |
 | `app_service_export.py` | App Service / Web Apps |
 | `function_apps_export.py` | Function Apps |
 | `azure_sql_export.py` | Azure SQL Databases |
+| `sql_managed_instance_export.py` | SQL Managed Instances |
 | `cosmos_db_export.py` | Cosmos DB Accounts |
+| `postgresql_flexible_export.py` | PostgreSQL Flexible Servers |
+| `mysql_flexible_export.py` | MySQL Flexible Servers |
+| `redis_cache_export.py` | Redis Caches |
 | `load_balancers_export.py` | Load Balancers |
+| `dns_zones_export.py` | DNS Zones (public + private) |
+| `front_door_export.py` | Front Door & CDN Profiles |
+| `traffic_manager_export.py` | Traffic Manager Profiles |
+| `event_hubs_export.py` | Event Hubs Namespaces |
+| `service_bus_export.py` | Service Bus Namespaces |
+| `api_management_export.py` | API Management Services |
+| `logic_apps_export.py` | Logic Apps (Workflows) |
 | `application_gateway_export.py` | Application Gateways |
 | `azure_firewall_export.py` | Azure Firewalls |
+| `firewall_policy_rules_export.py` | Firewall Policy Rules |
 | `route_tables_export.py` | Route Tables |
 | `vnet_peerings_export.py` | VNet Peerings |
+| `snapshots_export.py` | Snapshots |
+| `availability_sets_export.py` | Availability Sets |
+| `private_endpoints_export.py` | Private Endpoints |
+| `nat_gateways_export.py` | NAT Gateways |
+| `bastion_hosts_export.py` | Bastion Hosts |
+| `vpn_gateways_export.py` | VPN Gateways |
+| `expressroute_export.py` | ExpressRoute Circuits |
+| `virtual_wan_export.py` | Virtual WAN & Hubs |
+| `ddos_protection_export.py` | DDoS Protection Plans |
+| `network_watchers_export.py` | Network Watchers |
+| `service_endpoints_export.py` | Service Endpoints |
+| `blob_containers_export.py` | Blob Containers |
+| `file_shares_export.py` | File Shares |
+| `automation_accounts_export.py` | Automation Accounts |
+| `batch_accounts_export.py` | Batch Accounts |
+| `recovery_services_vaults_export.py` | Recovery Services Vaults |
+
+### Governance (11 exporters)
+
+| Script | Azure Service |
+|---|---|
+| `policy_assignments_export.py` | Azure Policy Assignments |
+| `management_groups_export.py` | Management Groups |
+| `defender_scores_export.py` | Defender Secure Scores & Plans |
+| `defender_assessments_export.py` | Defender Assessments |
+| `advisor_export.py` | Advisor Recommendations |
+| `resource_locks_export.py` | Resource Locks |
+| `resource_tags_export.py` | Resource Tags Inventory |
+| `policy_definitions_export.py` | Custom Policy Definitions |
+| `policy_compliance_export.py` | Policy Compliance State |
+| `managed_identities_export.py` | Managed Identities |
+| `cost_management_export.py` | Cost Management (Month-to-Date) |
+
+### Monitoring (5 exporters)
+
+| Script | Azure Service |
+|---|---|
+| `metric_alerts_export.py` | Metric & Activity Log Alerts |
+| `action_groups_export.py` | Action Groups |
+| `log_analytics_export.py` | Log Analytics Workspaces |
+| `diagnostic_settings_export.py` | Diagnostic Settings (audit) |
+| `application_insights_export.py` | Application Insights |
 
 ---
 
@@ -256,19 +311,29 @@ az role assignment create \
   --scope /subscriptions/<subscription-id>
 ```
 
-A purpose-built read-only custom role definition will be provided in `policies/` in a future update.
+`policies/azure-readonly-role.json` defines a purpose-built least-privilege
+alternative — control-plane reads for exactly the resource providers the
+exporters touch. See `policies/README.md`, which also covers the extra
+permission the Key Vault Objects exporter needs (data-plane **list** on keys,
+secrets and certificates; Key Vault Reader is enough, and secret *values* are
+never read).
 
 ---
 
 ## Troubleshooting
 
 **Missing dependencies**
+
+`stratusscan.py` and `configure.py` install everything from `pyproject.toml` on
+first run. To do it yourself, or after the pinned versions change:
+
 ```bash
-pip install azure-identity azure-mgmt-resource azure-mgmt-compute azure-mgmt-network \
-    azure-mgmt-storage azure-mgmt-keyvault azure-mgmt-authorization \
-    azure-mgmt-containerservice azure-mgmt-web azure-mgmt-sql azure-mgmt-cosmosdb \
-    pandas openpyxl
+pip install -r <(python -c "import tomllib;print(chr(10).join(tomllib.load(open('pyproject.toml','rb'))['project']['dependencies']))")
 ```
+
+Every `azure-*` dependency is pinned to a validated major version. An SDK outside
+that range reports which package and version it found rather than failing on an
+attribute error.
 
 **Authentication errors**
 ```bash
@@ -299,13 +364,16 @@ python -c "from azure.identity import DefaultAzureCredential; DefaultAzureCreden
 
 **Current version: 0.1.0-alpha** — pre-alpha, not production-ready.
 
-This is the initial scaffold of StratusScanCLI-Azure. The 21 exporters are written and the core architecture is in place, but the tool has not yet been validated against live Azure subscriptions. The first release will be cut once end-to-end testing is complete.
+All 70 exporters are written and the architecture is in place. Tier 1 has been
+validated against live Azure Government subscriptions; Tier 2, Governance and
+Monitoring have not. The first release will be cut once end-to-end validation is
+complete.
 
 ### Roadmap
 
 | Version | Target |
 |---|---|
-| `0.1.0` | First stable release — 21 exporters validated, Public + Government environments |
+| `0.1.0` | First stable release — 70 exporters validated, Public + Government environments |
 | `0.2.0` | Resource Graph Smart Scan, Entra ID exporters (Microsoft Graph SDK), pricing data |
 | `0.3.0+` | Multi-tenant scanning, Textual TUI |
 
