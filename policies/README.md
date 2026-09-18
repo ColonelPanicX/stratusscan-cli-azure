@@ -85,4 +85,4 @@ Cloud Shell or CLI signed in to the government cloud
 
 The `Actions` list mirrors the provider namespaces behind `utils._CLIENT_MAP`. When an
 exporter introduces a **new** `azure-mgmt-*` client, add that provider's `*/read` here.
-The current list covers all 70 exporters.
+The current list covers all 75 exporters.

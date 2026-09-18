@@ -115,6 +115,13 @@ def test_government_credential_is_a_plain_default_credential(monkeypatch):
         ("costmanagement", "query", "usage"),
         ("storage", "blob_containers", "list"),
         ("storage", "file_shares", "list"),
+        ("authorization", "role_definitions", "list"),
+        ("network", "flow_logs", "list"),
+        ("network", "network_watchers", "list_all"),
+        ("network", "virtual_networks", "list_all"),
+        ("security", "alerts", "list"),
+        ("security", "regulatory_compliance_standards", "list"),
+        ("security", "regulatory_compliance_controls", "list"),
     ],
 )
 def test_operation_group_and_method_exist(service, operation_group, method):
@@ -204,3 +211,131 @@ def test_diagnostic_settings_list_returns_a_pager_without_a_value_attribute():
     )
     assert isinstance(result, paging.ItemPaged)
     assert not hasattr(result, "value")
+
+
+def test_role_definitions_list_takes_scope_and_an_optional_type_filter():
+    parameters = inspect.signature(_client("authorization").role_definitions.list).parameters
+    assert parameters["scope"].default is inspect.Parameter.empty
+    assert "filter" in parameters and parameters["filter"].default is None
+
+
+def test_role_definition_permissions_and_audit_fields_live_where_the_exporter_reads_them():
+    models = pytest.importorskip("azure.mgmt.authorization.v2022_04_01.models")
+    role = models.RoleDefinition.deserialize(
+        {
+            "name": "acdd72a7-3385-48ef-bd42-f606fba81ae7",
+            "properties": {
+                "roleName": "Reader", "type": "BuiltInRole", "description": "d",
+                "assignableScopes": ["/"],
+                "permissions": [{"actions": ["*/read"], "notActions": ["Microsoft.Support/*"],
+                                 "dataActions": [], "notDataActions": []}],
+                "createdOn": "2015-06-02T00:18:27.3542039Z", "createdBy": "u1",
+            },
+        }
+    )
+    assert (role.role_name, role.role_type, role.created_by) == ("Reader", "BuiltInRole", "u1")
+    assert role.permissions[0].actions == ["*/read"]
+    assert role.permissions[0].not_actions == ["Microsoft.Support/*"]
+    assert role.created_on.year == 2015
+
+
+def test_flow_logs_list_takes_the_resource_group_and_watcher_name():
+    parameters = inspect.signature(_client("network").flow_logs.list).parameters
+    assert list(parameters)[:2] == ["resource_group_name", "network_watcher_name"]
+    assert all(parameters[name].default is inspect.Parameter.empty
+               for name in ("resource_group_name", "network_watcher_name"))
+
+
+def test_flow_log_nested_properties_read_through_the_flattened_model():
+    models = pytest.importorskip("azure.mgmt.network.models")
+    flow_log = models.FlowLog(
+        {
+            "name": "fl1", "location": "eastus",
+            "properties": {
+                "targetResourceId": "/subscriptions/s/resourceGroups/rg/providers/"
+                                    "Microsoft.Network/networkSecurityGroups/nsg1",
+                "storageId": "/subscriptions/s/resourceGroups/rg/providers/"
+                             "Microsoft.Storage/storageAccounts/sa",
+                "enabled": True,
+                "retentionPolicy": {"days": 30, "enabled": True},
+                "format": {"type": "JSON", "version": 2},
+                "flowAnalyticsConfiguration": {
+                    "networkWatcherFlowAnalyticsConfiguration": {
+                        "enabled": True, "workspaceRegion": "eastus",
+                        "workspaceResourceId": "/subscriptions/s/resourceGroups/rg/providers/"
+                                               "Microsoft.OperationalInsights/workspaces/ws",
+                        "trafficAnalyticsInterval": 60,
+                    }
+                },
+            },
+        }
+    )
+    assert flow_log.enabled is True
+    assert flow_log.retention_policy.days == 30
+    assert utils.s(flow_log.format.type) == "JSON"
+    analytics = flow_log.flow_analytics_configuration.network_watcher_flow_analytics_configuration
+    assert analytics.enabled is True and analytics.traffic_analytics_interval == 60
+
+
+def test_alert_carries_the_exported_fields_and_the_ones_deliberately_left_out():
+    models = pytest.importorskip("azure.mgmt.security.v2022_01_01.models")
+    alert = models.Alert.deserialize(
+        {
+            "name": "2518_a1",
+            "properties": {
+                "alertDisplayName": "Suspicious file", "severity": "High", "status": "Active",
+                "intent": "Execution", "alertType": "VM_EICAR", "vendorName": "Microsoft",
+                "compromisedEntity": "vm1", "remediationSteps": ["one", "two"],
+                "timeGeneratedUtc": "2026-09-01T10:06:00.0000000Z",
+                "resourceIdentifiers": [{"type": "AzureResource", "azureResourceId":
+                                         "/subscriptions/s/resourceGroups/rg/providers/"
+                                         "Microsoft.Compute/virtualMachines/vm1"}],
+                "entities": [{"type": "host", "hostName": "vm1"}],
+                "extendedProperties": {"compromised host": "vm1"},
+            },
+        }
+    )
+    assert alert.alert_display_name == "Suspicious file"
+    assert alert.remediation_steps == ["one", "two"]
+    assert alert.resource_identifiers[0].azure_resource_id.endswith("/virtualMachines/vm1")
+    assert alert.entities and alert.extended_properties, "both exist; the exporter must not export them"
+
+
+def test_regulatory_compliance_control_listing_takes_the_standard_name():
+    parameters = inspect.signature(_client("security").regulatory_compliance_controls.list).parameters
+    assert parameters["regulatory_compliance_standard_name"].default is inspect.Parameter.empty
+
+
+def test_regulatory_compliance_counts_are_top_level_on_the_models():
+    models = pytest.importorskip("azure.mgmt.security.v2019_01_01_preview.models")
+    standard = models.RegulatoryComplianceStandard.deserialize(
+        {"name": "PCI-DSS-v4", "properties": {"state": "Failed", "passedControls": 3,
+                                              "failedControls": 4, "skippedControls": 0,
+                                              "unsupportedControls": 1}}
+    )
+    control = models.RegulatoryComplianceControl.deserialize(
+        {"name": "1.1.1", "properties": {"state": "Passed", "description": "d",
+                                         "passedAssessments": 5, "failedAssessments": 0,
+                                         "skippedAssessments": 2}}
+    )
+    assert (utils.s(standard.state), standard.passed_controls, standard.unsupported_controls) == ("Failed", 3, 1)
+    assert (utils.s(control.state), control.passed_assessments, control.skipped_assessments) == ("Passed", 5, 2)
+
+
+def test_subscription_diagnostic_setting_log_entries_carry_category_and_enabled():
+    models = pytest.importorskip("azure.mgmt.monitor.models")
+    setting = models.SubscriptionDiagnosticSettingsResource.deserialize(
+        {
+            "name": "ds1",
+            "properties": {
+                "workspaceId": "/subscriptions/s/resourceGroups/rg/providers/"
+                               "Microsoft.OperationalInsights/workspaces/ws",
+                "logs": [{"category": "Administrative", "enabled": True},
+                         {"category": "Security", "enabled": False}],
+            },
+        }
+    )
+    assert [(entry.category, entry.enabled) for entry in setting.logs] == [
+        ("Administrative", True), ("Security", False)
+    ]
+    assert setting.workspace_id.endswith("/workspaces/ws")

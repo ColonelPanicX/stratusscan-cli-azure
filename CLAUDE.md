@@ -60,7 +60,7 @@ cli_ui.py                 # menus, prompts, status panel — the only input() in
 utils.py                  # shared library — print-free
 bootstrap.py              # stdlib-only dependency installer, called from main()
 config-template.json      # shipped config shape; config.json itself is untracked
-scripts/                  # all 70 exporters — flat directory, no subdirs
+scripts/                  # all 75 exporters — flat directory, no subdirs
   # Tier 1 (13)
   subscriptions_export.py
   resource_groups_export.py
@@ -117,23 +117,28 @@ scripts/                  # all 70 exporters — flat directory, no subdirs
   automation_accounts_export.py
   batch_accounts_export.py
   recovery_services_vaults_export.py
-  # Governance (11)
+  # Governance (14)
   policy_assignments_export.py
   management_groups_export.py
   defender_scores_export.py
   defender_assessments_export.py
+  defender_alerts_export.py
+  regulatory_compliance_export.py
   advisor_export.py
   resource_locks_export.py
   resource_tags_export.py
   policy_definitions_export.py
   policy_compliance_export.py
+  role_definitions_export.py
   managed_identities_export.py
   cost_management_export.py
-  # Monitoring (5)
+  # Monitoring (7)
   metric_alerts_export.py
   action_groups_export.py
   log_analytics_export.py
   diagnostic_settings_export.py
+  activity_log_settings_export.py
+  flow_logs_export.py
   application_insights_export.py
 output/                   # .xlsx exports, .run-manifest.jsonl, run-report-*.xlsx, exports-*.zip
 logs/                     # per-run log files (14-day retention)
@@ -263,7 +268,7 @@ All files land in `output/`.
 - Annotations use PEP 604 (`X | None`, `list[str]`) — the floor is Python 3.10 and `ruff check .` must stay at 0
 - Tests are offline and need no credentials. Run the suite on **both** 3.10 and 3.12; CI does the same and also runs ruff.
   `tests/test_sdk_contract.py` pins the SDK call shapes the exporters rely on, `tests/test_exporter_contract.py` pins the
-  exporter pattern and `registry == disk == 70`, `tests/test_exporter_smoke.py` runs every `main()` against an empty client
+  exporter pattern and `registry == disk`, `tests/test_exporter_smoke.py` runs every `main()` against an empty client
   and asserts importing writes nothing.
 
 ---
@@ -272,7 +277,7 @@ All files land in `output/`.
 
 | Version | Scope |
 |---|---|
-| v0.1.0 (current) | 70 exporters, Public + Government environments, subscription selector |
+| v0.1.0 (current) | 75 exporters, Public + Government environments, subscription selector |
 | v0.2.0 | Resource Graph Smart Scan, Entra ID exporters (Graph SDK), pricing data |
 | v0.3.0+ | Multi-tenant scanning, Textual TUI |
 

@@ -14,6 +14,10 @@ EXPORTERS = sorted(p for p in SCRIPTS_DIR.glob("*_export.py"))
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 
+# Exporters whose empty listing is itself the finding: they write a workbook that
+# says so instead of raising NoResourcesFound and exiting 3.
+ALWAYS_REPORTS = {"activity_log_settings_export.py"}
+
 
 def _main_guard_calls(source: str) -> list:
     """Return the statements inside `if __name__ == "__main__":` as source strings."""
@@ -63,6 +67,7 @@ def test_exporter_imports_and_exposes_main(path, monkeypatch):
     assert callable(getattr(module, "main", None))
     assert module.main.__code__.co_argcount == 2
     source = path.read_text(encoding="utf-8")
-    assert "utils.NoResourcesFound(" in source
+    if path.name not in ALWAYS_REPORTS:
+        assert "utils.NoResourcesFound(" in source
     assert "utils.ExportResult(" in source
     assert 'print("No ' not in source, "empty results must raise utils.NoResourcesFound"
