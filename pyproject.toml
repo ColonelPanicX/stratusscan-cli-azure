@@ -102,7 +102,7 @@ Repository = "https://github.com/ColonelPanicX/StratusScan-CLI-Azure"
 
 # Clone-and-run only (v0.1.x): py-modules exists so `pip install -e ".[dev]"` works in CI.
 [tool.setuptools]
-py-modules = ["stratusscan", "configure", "utils", "runner", "bootstrap"]
+py-modules = ["stratusscan", "configure", "utils", "runner", "bootstrap", "cli_ui"]
 
 [tool.black]
 line-length = 100

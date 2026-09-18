@@ -253,7 +253,7 @@ def test_configure_applies_selected_environment_before_subscription_discovery(mo
     monkeypatch.setenv("AZURE_ENVIRONMENT", "")
     monkeypatch.delenv("AZURE_ENVIRONMENT")
 
-    configure.main()
+    configure.main([])
 
     assert observed["env"] == "AzureUSGovernment"
 

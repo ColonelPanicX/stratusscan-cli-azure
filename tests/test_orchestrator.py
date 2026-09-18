@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
+import cli_ui
 import stratusscan
 import utils
 
@@ -194,6 +195,101 @@ def test_auto_run_exit_code(monkeypatch, statuses, expected):
     monkeypatch.setattr(utils, "setup_logging", lambda *a, **k: utils.get_logger())
 
     with pytest.raises(SystemExit) as info:
-        stratusscan.main()
+        stratusscan.main([])
 
     assert info.value.code == expected
+
+
+def test_tenant_scoped_exporters_run_once_across_subscriptions(monkeypatch, manifest, capsys):
+    monkeypatch.setattr(subprocess, "run", _fake_run([0, 0, 0, 0], manifest))
+    exporters = [
+        ("Subscriptions", "subscriptions_export.py"),
+        ("Management Groups", "management_groups_export.py"),
+        ("Storage Accounts", _EXPORTER),
+    ]
+    subs = [("sub-1", "Sub One"), ("sub-2", "Sub Two")]
+
+    outcomes = stratusscan._run_all_exporters(exporters, subs, package_outputs=False)
+
+    ran = [(o["Exporter"], o["Subscription"]) for o in outcomes]
+    assert ran == [
+        ("Subscriptions", "Sub One"),
+        ("Management Groups", "Sub One"),
+        ("Storage Accounts", "Sub One"),
+        ("Storage Accounts", "Sub Two"),
+    ]
+
+
+def test_tenant_scoped_exporters_still_run_for_a_single_subscription(monkeypatch, manifest):
+    monkeypatch.setattr(subprocess, "run", _fake_run([0], manifest))
+
+    outcomes = stratusscan._run_all_exporters(
+        [("Subscriptions", "subscriptions_export.py")], _SUB, package_outputs=False
+    )
+
+    assert [o["Exporter"] for o in outcomes] == ["Subscriptions"]
+
+
+def test_tenant_scoped_registry_names_only_real_exporters():
+    registered = {path for _, path in stratusscan.ALL_EXPORTERS}
+    assert registered >= stratusscan.TENANT_SCOPED_EXPORTERS
+
+
+def test_x_in_a_tier_menu_unwinds_to_the_main_menu(monkeypatch, capsys):
+    menus = []
+
+    def fake_menu(title, options, **kwargs):
+        menus.append(title)
+        if "MAIN MENU" in title:
+            if len(menus) > 2:
+                raise cli_ui.QuitRequested
+            return 3
+        raise cli_ui.BackToMain
+
+    monkeypatch.setattr(cli_ui, "prompt_menu", fake_menu)
+    monkeypatch.setattr(stratusscan, "_print_status_panel", lambda subs: None)
+
+    with pytest.raises(SystemExit) as info:
+        stratusscan.menu_main(_SUB)
+
+    assert info.value.code == 0
+    assert "Goodbye." in capsys.readouterr().out
+    assert [m.split(" ")[0] for m in menus] == ["STRATUSSCAN", "GOVERNANCE", "STRATUSSCAN"]
+
+
+def test_q_anywhere_quits_with_exit_0(monkeypatch, capsys):
+    def fake_menu(title, options, **kwargs):
+        raise cli_ui.QuitRequested
+
+    monkeypatch.setattr(cli_ui, "prompt_menu", fake_menu)
+    monkeypatch.setattr(stratusscan, "_print_status_panel", lambda subs: None)
+
+    with pytest.raises(SystemExit) as info:
+        stratusscan.menu_main(_SUB)
+
+    assert info.value.code == 0
+    assert "Goodbye." in capsys.readouterr().out
+
+
+def test_configure_reloads_the_config_without_resetting_module_globals(monkeypatch):
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: SimpleNamespace(returncode=0))
+    monkeypatch.setattr(cli_ui, "prompt_menu", lambda *a, **k: 7)
+    reloaded = []
+    monkeypatch.setattr(utils, "reload_config", lambda: reloaded.append(True) or {})
+    monkeypatch.setattr(stratusscan, "_active_subscriptions", lambda: [("sub-9", "Sub Nine")])
+
+    assert stratusscan._main_menu_once(_SUB) == [("sub-9", "Sub Nine")]
+    assert reloaded == [True]
+
+
+def test_status_panel_reports_version_environment_and_config_source(monkeypatch, capsys):
+    monkeypatch.delenv("STRATUSSCAN_SUBSCRIPTIONS", raising=False)
+    monkeypatch.delenv("AZURE_ENVIRONMENT", raising=False)
+
+    stratusscan._print_status_panel([("sub-1", "Sub One")])
+
+    out = capsys.readouterr().out
+    assert utils.get_version() in out
+    assert "AzurePublicCloud" in out or "AzureUSGovernment" in out
+    assert "Sub One" in out
+    assert "Python" in out

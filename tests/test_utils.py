@@ -304,17 +304,6 @@ def test_list_subscriptions_returns_empty_list_only_when_azure_returns_none(monk
     assert utils.list_subscriptions() == []
 
 
-def test_prompt_menu_treats_eof_as_exit(monkeypatch, capsys):
-    monkeypatch.delenv("STRATUSSCAN_AUTO_RUN", raising=False)
-
-    def closed_stdin(prompt=""):
-        raise EOFError
-
-    monkeypatch.setattr("builtins.input", closed_stdin)
-    assert utils.prompt_menu("T", ["a"], allow_back=False, allow_exit=True) == "exit"
-    assert utils.prompt_menu("T", ["a"], allow_back=True, allow_exit=False) == "back"
-
-
 def test_is_service_available_in_environment_contract():
     assert utils.is_service_available_in_environment("compute", "public") is True
     assert utils.is_service_available_in_environment("network", "government") is True
@@ -683,3 +672,103 @@ def test_list_subscription_wide_requires_at_least_one_name():
 
     with pytest.raises(ValueError):
         utils.list_subscription_wide(SimpleNamespace(list=lambda: iter([])))
+
+
+# ---------------------------------------------------------------------------
+# Output directory, config reload, subscription ID shape
+# ---------------------------------------------------------------------------
+
+def test_output_dir_defaults_to_output_beside_the_module(monkeypatch, tmp_path):
+    monkeypatch.delenv(utils.OUTPUT_DIR_ENV, raising=False)
+    monkeypatch.setattr(utils, "__file__", str(tmp_path / "utils.py"))
+    monkeypatch.setattr(utils, "_config_cache", dict(utils._DEFAULT_CONFIG))
+
+    assert utils.output_dir() == tmp_path / "output"
+    assert (tmp_path / "output").is_dir()
+
+
+def test_output_dir_environment_variable_wins_over_config(monkeypatch, tmp_path):
+    monkeypatch.setattr(utils, "_config_cache", {**utils._DEFAULT_CONFIG, "output_dir": str(tmp_path / "cfg")})
+    monkeypatch.setenv(utils.OUTPUT_DIR_ENV, str(tmp_path / "env"))
+
+    assert utils.output_dir() == tmp_path / "env"
+
+
+def test_output_dir_uses_the_configured_directory(monkeypatch, tmp_path):
+    monkeypatch.delenv(utils.OUTPUT_DIR_ENV, raising=False)
+    monkeypatch.setattr(utils, "_config_cache", {**utils._DEFAULT_CONFIG, "output_dir": str(tmp_path / "cfg")})
+
+    assert utils.output_dir() == tmp_path / "cfg"
+
+
+def test_output_dir_resolves_a_relative_path_against_the_project_root(monkeypatch, tmp_path):
+    monkeypatch.setattr(utils, "__file__", str(tmp_path / "utils.py"))
+    monkeypatch.setenv(utils.OUTPUT_DIR_ENV, "exports")
+
+    assert utils.output_dir() == tmp_path / "exports"
+
+
+def test_reload_config_picks_up_a_file_written_by_another_process(monkeypatch, tmp_path):
+    config_path = tmp_path / "config.json"
+    monkeypatch.setattr(utils, "_CONFIG_PATH", config_path)
+    monkeypatch.setattr(utils, "_config_cache", None)
+    assert utils.get_config()["default_subscription_id"] == ""
+
+    config_path.write_text('{"default_subscription_id": "sub-9"}', encoding="utf-8")
+    assert utils.get_config()["default_subscription_id"] == ""
+
+    assert utils.reload_config()["default_subscription_id"] == "sub-9"
+    assert utils.config_path() == config_path
+
+
+def test_reload_config_leaves_the_credential_and_logger_globals_alone(monkeypatch, tmp_path):
+    monkeypatch.setattr(utils, "_CONFIG_PATH", tmp_path / "config.json")
+    monkeypatch.setattr(utils, "_config_cache", None)
+    sentinel = object()
+    monkeypatch.setattr(utils, "_credential_cache", sentinel)
+    log = utils.get_logger()
+
+    utils.reload_config()
+
+    assert utils._credential_cache is sentinel
+    assert utils.get_logger() is log
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("11111111-2222-3333-4444-555555555555", True),
+        ("AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", True),
+        ("  11111111-2222-3333-4444-555555555555  ", True),
+        ("11111111-2222-3333-4444-55555555555", False),
+        ("sub-a", False),
+        ("", False),
+        ("11111111222233334444555555555555", False),
+    ],
+)
+def test_is_subscription_id(value, expected):
+    assert utils.is_subscription_id(value) is expected
+
+
+def test_set_console_level_moves_the_console_handler_only(tmp_path):
+    import logging
+
+    log = utils.setup_logging("levels", log_to_file=False)
+    utils.set_console_level(logging.INFO)
+
+    console = [h for h in log.handlers if isinstance(h, logging.StreamHandler)]
+    assert console and all(h.level == logging.INFO for h in console)
+    log.handlers = []
+
+
+def test_utils_stays_print_free_and_input_free():
+    """Design constraint #3: utils.py is a library — the console belongs to cli_ui.py."""
+    import ast
+
+    tree = ast.parse(Path(utils.__file__).read_text(encoding="utf-8"))
+    called = {
+        node.func.id for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    }
+    assert "print" not in called
+    assert "input" not in called
