@@ -24,15 +24,14 @@ def collect_vaults(subscription_id: str) -> list:
     return list(client.vaults.list_by_subscription_id())
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("recoveryservices", environment):
         sys.exit(0)
 
     vaults = collect_vaults(subscription_id)
     if not vaults:
-        print("No Recovery Services vaults found.")
-        return
+        raise utils.NoResourcesFound("Recovery Services vaults")
 
     rows = []
     for vault in vaults:
@@ -55,11 +54,10 @@ def main(subscription_id: str, subscription_name: str) -> None:
     utils.save_dataframe_to_excel(df, filename, sheet_name="Recovery Services Vaults")
     print(f"Exported {len(rows)} Recovery Services vault(s) → {filename}")
     log.info("Export complete: %d vaults", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=[])
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "recovery-services-vaults")

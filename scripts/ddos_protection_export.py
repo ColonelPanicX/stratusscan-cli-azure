@@ -24,15 +24,14 @@ def collect_plans(subscription_id: str) -> list:
     return list(client.ddos_protection_plans.list())
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("network", environment):
         sys.exit(0)
 
     plans = collect_plans(subscription_id)
     if not plans:
-        print("No DDoS protection plans found.")
-        return
+        raise utils.NoResourcesFound("DDoS protection plans")
 
     rows = []
     for plan in plans:
@@ -54,11 +53,10 @@ def main(subscription_id: str, subscription_name: str) -> None:
     utils.save_dataframe_to_excel(df, filename, sheet_name="DDoS Protection Plans")
     print(f"Exported {len(rows)} DDoS protection plan(s) → {filename}")
     log.info("Export complete: %d plans", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=[])
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "ddos-protection")

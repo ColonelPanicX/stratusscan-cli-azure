@@ -79,15 +79,14 @@ def _build_row(pip) -> dict:
     }
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("network", environment):
         sys.exit(0)
 
     pips = collect_public_ips(subscription_id)
     if not pips:
-        print("No public IP addresses found.")
-        return
+        raise utils.NoResourcesFound("public IP addresses")
 
     rows = [_build_row(pip) for pip in pips]
 
@@ -96,11 +95,10 @@ def main(subscription_id: str, subscription_name: str) -> None:
     utils.save_dataframe_to_excel(df, filename, sheet_name="Public IPs")
     print(f"Exported {len(rows)} public IP(s) → {filename}")
     log.info("Export complete: %d public IPs", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=[])
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "public-ips")

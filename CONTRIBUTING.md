@@ -142,15 +142,14 @@ def collect_resources(subscription_id: str) -> list:
     return list(client.resource_type.list())  # Azure SDK iterators paginate automatically
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("myservice", environment):
         sys.exit(0)
 
     resources = collect_resources(subscription_id)
     if not resources:
-        print("No resources found.")
-        return
+        raise utils.NoResourcesFound("resources")  # runner prints "No resources found." and exits 3
 
     rows = []
     for r in resources:
@@ -169,17 +168,26 @@ def main(subscription_id: str, subscription_name: str) -> None:
     utils.save_dataframe_to_excel(df, filename, sheet_name="My Service")
     print(f"Exported {len(rows)} resource(s) → {filename}")
     log.info("Export complete: %d resources", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=[])
 
 
 if __name__ == "__main__":
-    cfg = utils.get_config()
-    sub_id = cfg.get("default_subscription_id", "")
-    sub_name = utils.get_subscription_name(sub_id)
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "my-service")
 ```
+
+`runner.run_exporter` resolves the target subscription (`STRATUSSCAN_SUBSCRIPTION_ID`, else the configured default), calls `main`, maps the outcome to an exit code, and appends one line to `output/.run-manifest.jsonl`. Do not reintroduce a hand-written `__main__` block: the old form resolved the subscription itself and printed a stale "Run configure.py first" message.
+
+| Exit code | Status | Meaning |
+|---|---|---|
+| 0 | OK | Workbook written |
+| 1 | FAILED | An exception escaped `main` (typed Azure errors print one line and a hint; the traceback goes to `logs/`) |
+| 2 | CONFIG | No subscription targeted, unrecognized `AZURE_ENVIRONMENT`, or missing package |
+| 3 | EMPTY | `main` raised `utils.NoResourcesFound` — zero resources, no workbook |
+| 4 | PARTIAL | Workbook written but at least one parent scope failed — see its `Errors` sheet |
+
+Per-parent loops (containers per storage account, databases per server, …) catch `HttpResponseError` only, append `utils.error_record(scope, operation, exc)` to an `errors` list, and pass that list to `save_dataframe_to_excel(..., errors=errors)` and `utils.ExportResult(..., errors=errors)`. Never catch bare `Exception` around a primary listing: a failed listing must fail the run, not report an empty inventory.
 
 ### Key rules for exporters
 

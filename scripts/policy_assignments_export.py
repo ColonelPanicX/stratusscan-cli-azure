@@ -12,6 +12,7 @@ except ImportError:
     import utils
 
 import pandas as pd
+from azure.core.exceptions import HttpResponseError
 
 utils.setup_logging("policy-assignments-export")
 utils.log_script_start("policy_assignments_export.py", "Azure Policy Assignments Export")
@@ -19,7 +20,8 @@ utils.log_script_start("policy_assignments_export.py", "Azure Policy Assignments
 log = utils.get_logger()
 
 
-def _build_definition_lookup(client) -> dict:
+def _build_definition_lookup(client, errors: list) -> dict:
+    """Name/type/category lookup for the assignments sheet; a failed listing is recorded, not fatal."""
     lookup = {}
     try:
         for defn in client.policy_definitions.list():
@@ -32,7 +34,8 @@ def _build_definition_lookup(client) -> dict:
             if defn.metadata:
                 cat = defn.metadata.get("category", "")
                 lookup[defn.id]["category"] = cat
-    except Exception as e:
+    except HttpResponseError as e:
+        errors.append(utils.error_record("policy definitions", "policy_definitions.list", e))
         log.warning("Failed to build definition lookup: %s", e)
 
     try:
@@ -46,13 +49,14 @@ def _build_definition_lookup(client) -> dict:
                 }
                 if defn.metadata:
                     lookup[defn.id]["category"] = defn.metadata.get("category", "")
-    except Exception as e:
+    except HttpResponseError as e:
+        errors.append(utils.error_record("built-in policy definitions", "policy_definitions.list_built_in", e))
         log.warning("Failed to list built-in definitions: %s", e)
 
     return lookup
 
 
-def _build_initiative_lookup(client) -> dict:
+def _build_initiative_lookup(client, errors: list) -> dict:
     lookup = {}
     try:
         for defn in client.policy_set_definitions.list():
@@ -64,7 +68,8 @@ def _build_initiative_lookup(client) -> dict:
             }
             if defn.metadata:
                 lookup[defn.id]["category"] = defn.metadata.get("category", "")
-    except Exception as e:
+    except HttpResponseError as e:
+        errors.append(utils.error_record("policy set definitions", "policy_set_definitions.list", e))
         log.warning("Failed to build initiative lookup: %s", e)
     return lookup
 
@@ -98,35 +103,34 @@ def _scope_label(scope: str) -> str:
 
 
 def collect_assignments(subscription_id: str) -> tuple:
+    """Return (assignments, lookup, client, errors); lookup failures land in errors."""
     client = utils.get_azure_client("policy", subscription_id)
     log.info("Building policy definition lookups for subscription %s", subscription_id)
-    defn_lookup = _build_definition_lookup(client)
-    init_lookup = _build_initiative_lookup(client)
+    errors: list = []
+    defn_lookup = _build_definition_lookup(client, errors)
+    init_lookup = _build_initiative_lookup(client, errors)
     combined_lookup = {**defn_lookup, **init_lookup}
 
     log.info("Listing policy assignments for subscription %s", subscription_id)
     assignments = list(client.policy_assignments.list())
-    return assignments, combined_lookup, client
+    return assignments, combined_lookup, client, errors
 
 
 def collect_custom_definitions(client) -> list:
     log.info("Listing custom policy definitions")
-    definitions = []
-    try:
-        for defn in client.policy_definitions.list():
-            if defn.policy_type and defn.policy_type.lower() == "custom":
-                definitions.append(defn)
-    except Exception as e:
-        log.warning("Failed to list custom definitions: %s", e)
-    return definitions
+    return [
+        defn
+        for defn in client.policy_definitions.list()
+        if defn.policy_type and defn.policy_type.lower() == "custom"
+    ]
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("resource", environment):
         sys.exit(0)
 
-    assignments, lookup, client = collect_assignments(subscription_id)
+    assignments, lookup, client, errors = collect_assignments(subscription_id)
 
     assignment_rows = []
     for a in assignments:
@@ -162,8 +166,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
         })
 
     if not assignment_rows and not custom_rows:
-        print("No policy assignments or custom definitions found.")
-        return
+        raise utils.NoResourcesFound("policy assignments or custom definitions")
 
     sheets = {}
     if assignment_rows:
@@ -172,14 +175,13 @@ def main(subscription_id: str, subscription_name: str) -> None:
         sheets["Custom Definitions"] = pd.DataFrame(custom_rows)
 
     filename = utils.create_export_filename(subscription_name, "policy-assignments", "all")
-    utils.save_multiple_dataframes_to_excel(sheets, filename)
+    utils.save_multiple_dataframes_to_excel(sheets, filename, errors=errors)
     print(f"Exported {len(assignment_rows)} assignment(s), {len(custom_rows)} custom definition(s) → {filename}")
     log.info("Export complete: %d assignments, %d custom definitions", len(assignment_rows), len(custom_rows))
+    return utils.ExportResult(rows=len(assignment_rows) + len(custom_rows), filename=filename, errors=errors)
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "policy-assignments")

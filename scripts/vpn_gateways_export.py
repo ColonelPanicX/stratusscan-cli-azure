@@ -11,6 +11,7 @@ except ImportError:
     import utils
 
 import pandas as pd
+from azure.core.exceptions import HttpResponseError
 
 utils.setup_logging("vpn-gateways-export")
 utils.log_script_start("vpn_gateways_export.py", "VPN Gateways Export")
@@ -18,19 +19,22 @@ utils.log_script_start("vpn_gateways_export.py", "VPN Gateways Export")
 log = utils.get_logger()
 
 
-def collect_vpn_gateways(subscription_id: str) -> list:
+def collect_vpn_gateways(subscription_id: str) -> tuple:
+    """Return ([(resource_group, gateway)], errors); a resource group whose listing fails is recorded, not dropped."""
     network = utils.get_azure_client("network", subscription_id)
     resource = utils.get_azure_client("resource", subscription_id)
     log.info("Listing virtual network gateways across resource groups in %s", subscription_id)
 
     gateways = []
+    errors: list = []
     for rg in resource.resource_groups.list():
         try:
             for gw in network.virtual_network_gateways.list(rg.name):
                 gateways.append((rg.name, gw))
-        except Exception as e:
+        except HttpResponseError as e:
+            errors.append(utils.error_record(rg.name, "virtual_network_gateways.list", e))
             log.warning("Failed to list gateways in %s: %s", rg.name, e)
-    return gateways
+    return gateways, errors
 
 
 def _public_ips(gw) -> str:
@@ -51,15 +55,14 @@ def _bgp_asn(gw) -> str:
     return ""
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("network", environment):
         sys.exit(0)
 
-    gateways = collect_vpn_gateways(subscription_id)
-    if not gateways:
-        print("No VPN gateways found.")
-        return
+    gateways, errors = collect_vpn_gateways(subscription_id)
+    if not gateways and not errors:
+        raise utils.NoResourcesFound("VPN gateways")
 
     rows = []
     for rg, gw in gateways:
@@ -82,14 +85,13 @@ def main(subscription_id: str, subscription_name: str) -> None:
 
     df = pd.DataFrame(rows)
     filename = utils.create_export_filename(subscription_name, "vpn-gateways", "all")
-    utils.save_dataframe_to_excel(df, filename, sheet_name="VPN Gateways")
+    utils.save_dataframe_to_excel(df, filename, sheet_name="VPN Gateways", errors=errors)
     print(f"Exported {len(rows)} VPN gateway(s) → {filename}")
     log.info("Export complete: %d VPN gateways", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=errors)
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "vpn-gateways")

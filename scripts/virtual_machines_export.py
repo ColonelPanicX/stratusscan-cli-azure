@@ -79,7 +79,7 @@ def _get_status(client, vm, states: dict, resource_group: str) -> str:
     return state or "unknown"
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("compute", environment):
         sys.exit(0)
@@ -88,8 +88,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
     log.info("Listing all VMs in subscription %s", subscription_id)
     vms = collect_vms(client)
     if not vms:
-        print("No virtual machines found.")
-        return
+        raise utils.NoResourcesFound("virtual machines")
 
     states = collect_power_states(client)
     log.info("Resolved power state for %d of %d VMs from statusOnly listing", len(states), len(vms))
@@ -123,11 +122,10 @@ def main(subscription_id: str, subscription_name: str) -> None:
     utils.save_dataframe_to_excel(df, filename, sheet_name="Virtual Machines")
     print(f"Exported {len(rows)} virtual machine(s) → {filename}")
     log.info("Export complete: %d VMs", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=[])
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "virtual-machines")

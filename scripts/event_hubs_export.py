@@ -11,6 +11,7 @@ except ImportError:
     import utils
 
 import pandas as pd
+from azure.core.exceptions import HttpResponseError
 
 utils.setup_logging("event-hubs-export")
 utils.log_script_start("event_hubs_export.py", "Event Hubs Namespaces Export")
@@ -18,31 +19,32 @@ utils.log_script_start("event_hubs_export.py", "Event Hubs Namespaces Export")
 log = utils.get_logger()
 
 
-def collect_namespaces(subscription_id: str) -> list:
+def collect_namespaces(subscription_id: str) -> tuple:
     client = utils.get_azure_client("eventhub", subscription_id)
     log.info("Listing Event Hubs namespaces in subscription %s", subscription_id)
     if hasattr(client.namespaces, "list_by_subscription"):
-        return list(client.namespaces.list_by_subscription())
+        return list(client.namespaces.list_by_subscription()), []
 
     resource = utils.get_azure_client("resource", subscription_id)
     namespaces = []
+    errors: list = []
     for rg in resource.resource_groups.list():
         try:
             namespaces.extend(client.namespaces.list_by_resource_group(rg.name))
-        except Exception as exc:
+        except HttpResponseError as exc:
+            errors.append(utils.error_record(rg.name, "namespaces.list_by_resource_group", exc))
             log.warning("Failed to list Event Hubs namespaces in %s: %s", rg.name, exc)
-    return namespaces
+    return namespaces, errors
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("eventhub", environment):
         sys.exit(0)
 
-    namespaces = collect_namespaces(subscription_id)
-    if not namespaces:
-        print("No Event Hubs namespaces found.")
-        return
+    namespaces, errors = collect_namespaces(subscription_id)
+    if not namespaces and not errors:
+        raise utils.NoResourcesFound("Event Hubs namespaces")
 
     rows = []
     for ns in namespaces:
@@ -66,14 +68,13 @@ def main(subscription_id: str, subscription_name: str) -> None:
 
     df = pd.DataFrame(rows)
     filename = utils.create_export_filename(subscription_name, "event-hubs", "all")
-    utils.save_dataframe_to_excel(df, filename, sheet_name="Event Hubs")
+    utils.save_dataframe_to_excel(df, filename, sheet_name="Event Hubs", errors=errors)
     print(f"Exported {len(rows)} Event Hubs namespace(s) → {filename}")
     log.info("Export complete: %d namespaces", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=errors)
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "event-hubs")

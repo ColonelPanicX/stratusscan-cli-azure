@@ -11,6 +11,7 @@ except ImportError:
     import utils
 
 import pandas as pd
+from azure.core.exceptions import HttpResponseError
 
 utils.setup_logging("key-vault-export")
 utils.log_script_start("key_vault_export.py", "Azure Key Vault Export")
@@ -24,15 +25,16 @@ def collect_vaults(subscription_id: str) -> list:
     return list(client.vaults.list())
 
 
-def _get_vault_detail(client, resource_group: str, name: str):
+def _get_vault_detail(client, resource_group: str, name: str, errors: list):
     try:
         return client.vaults.get(resource_group, name)
-    except Exception as exc:
+    except HttpResponseError as exc:
+        errors.append(utils.error_record(name, "vaults.get", exc))
         log.warning("Could not get vault detail for %s: %s", name, exc)
         return None
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("keyvault", environment):
         sys.exit(0)
@@ -40,13 +42,13 @@ def main(subscription_id: str, subscription_name: str) -> None:
     client = utils.get_azure_client("keyvault", subscription_id)
     vaults_summary = collect_vaults(subscription_id)
     if not vaults_summary:
-        print("No key vaults found.")
-        return
+        raise utils.NoResourcesFound("key vaults")
 
     rows = []
+    errors: list = []
     for vault_ref in vaults_summary:
         rg = utils.extract_resource_group(vault_ref.id)
-        vault = _get_vault_detail(client, rg, vault_ref.name)
+        vault = _get_vault_detail(client, rg, vault_ref.name, errors)
         if vault is None:
             continue
         props = vault.properties
@@ -67,14 +69,13 @@ def main(subscription_id: str, subscription_name: str) -> None:
 
     df = pd.DataFrame(rows)
     filename = utils.create_export_filename(subscription_name, "key-vaults", "all")
-    utils.save_dataframe_to_excel(df, filename, sheet_name="Key Vaults")
+    utils.save_dataframe_to_excel(df, filename, sheet_name="Key Vaults", errors=errors)
     print(f"Exported {len(rows)} key vault(s) → {filename}")
     log.info("Export complete: %d vaults", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=errors)
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "key-vault")

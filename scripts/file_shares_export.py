@@ -38,7 +38,7 @@ def _build_row(share, account: str, rg: str) -> dict:
     }
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("storage", environment):
         sys.exit(0)
@@ -47,37 +47,35 @@ def main(subscription_id: str, subscription_name: str) -> None:
     log.info("Listing file shares across storage accounts in %s", subscription_id)
 
     rows = []
+    errors: list = []
     unsupported_accounts = 0
     for rg, account in _iter_accounts(client):
         try:
             for share in client.file_shares.list(rg, account):
                 rows.append(_build_row(share, account, rg))
         except HttpResponseError as e:
-            if getattr(e, "error", None) and getattr(e.error, "code", "") == "FeatureNotSupportedForAccount":
+            if utils.error_code(e) == "FeatureNotSupportedForAccount":
                 unsupported_accounts += 1
                 log.info("Skipping file shares for unsupported account %s", account)
                 continue
-            log.warning("Failed to list file shares for account %s: %s", account, e)
-        except Exception as e:
+            errors.append(utils.error_record(account, "file_shares.list", e))
             log.warning("Failed to list file shares for account %s: %s", account, e)
 
     if unsupported_accounts:
         print(f"Skipped {unsupported_accounts} account(s) that do not support Azure Files.")
 
-    if not rows:
-        print("No file shares found.")
-        return
+    if not rows and not errors:
+        raise utils.NoResourcesFound("file shares")
 
     df = pd.DataFrame(rows)
     filename = utils.create_export_filename(subscription_name, "file-shares", "all")
-    utils.save_dataframe_to_excel(df, filename, sheet_name="File Shares")
+    utils.save_dataframe_to_excel(df, filename, sheet_name="File Shares", errors=errors)
     print(f"Exported {len(rows)} file share(s) → {filename}")
     log.info("Export complete: %d file shares", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=errors)
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "file-shares")

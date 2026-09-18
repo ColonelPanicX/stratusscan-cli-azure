@@ -123,17 +123,10 @@ def collect_action_groups(subscription_id: str) -> list:
     client = utils.get_azure_client("monitor", subscription_id)
     log.info("Listing action groups for subscription %s", subscription_id)
 
-    rows = []
-    try:
-        for ag in client.action_groups.list_by_subscription_id():
-            rows.append(_build_row(ag))
-    except Exception as e:
-        log.warning("Failed to list action groups: %s", e)
-
-    return rows
+    return [_build_row(ag) for ag in client.action_groups.list_by_subscription_id()]
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("resource", environment):
         sys.exit(0)
@@ -141,19 +134,17 @@ def main(subscription_id: str, subscription_name: str) -> None:
     rows = collect_action_groups(subscription_id)
 
     if not rows:
-        print("No action groups found.")
-        return
+        raise utils.NoResourcesFound("action groups")
 
     df = pd.DataFrame(rows)
     filename = utils.create_export_filename(subscription_name, "action-groups", "all")
     utils.save_dataframe_to_excel(df, filename)
     print(f"Exported {len(rows)} action group(s) → {filename}")
     log.info("Export complete: %d action groups", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=[])
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "action-groups")

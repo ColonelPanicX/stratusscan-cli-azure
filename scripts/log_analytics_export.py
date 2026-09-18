@@ -54,17 +54,10 @@ def collect_workspaces(subscription_id: str) -> list:
     client = utils.get_azure_client("loganalytics", subscription_id)
     log.info("Listing Log Analytics workspaces for subscription %s", subscription_id)
 
-    rows = []
-    try:
-        for ws in client.workspaces.list():
-            rows.append(_build_row(ws))
-    except Exception as e:
-        log.warning("Failed to list Log Analytics workspaces: %s", e)
-
-    return rows
+    return [_build_row(ws) for ws in client.workspaces.list()]
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("resource", environment):
         sys.exit(0)
@@ -72,19 +65,17 @@ def main(subscription_id: str, subscription_name: str) -> None:
     rows = collect_workspaces(subscription_id)
 
     if not rows:
-        print("No Log Analytics workspaces found.")
-        return
+        raise utils.NoResourcesFound("Log Analytics workspaces")
 
     df = pd.DataFrame(rows)
     filename = utils.create_export_filename(subscription_name, "log-analytics", "all")
     utils.save_dataframe_to_excel(df, filename)
     print(f"Exported {len(rows)} workspace(s) → {filename}")
     log.info("Export complete: %d workspaces", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=[])
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "log-analytics")

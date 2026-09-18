@@ -17,6 +17,7 @@ except ImportError:
     import utils
 
 import pandas as pd
+from azure.core.exceptions import HttpResponseError
 
 utils.setup_logging("defender-assessments-export")
 utils.log_script_start("defender_assessments_export.py", "Defender Security Assessments Export")
@@ -56,12 +57,13 @@ def _iso(value: Any) -> str:
     return value.isoformat() if hasattr(value, "isoformat") else utils.s(value)
 
 
-def collect_assessment_metadata(client) -> dict[str, Any]:
-    """Return {assessment GUID: SecurityAssessmentMetadataResponse}; empty when the call fails."""
+def collect_assessment_metadata(client, errors: list) -> dict[str, Any]:
+    """Return {assessment GUID: SecurityAssessmentMetadataResponse}; empty (and recorded in errors) when the call fails."""
     log.info("Listing assessment metadata")
     try:
         return {utils.s(m.name): m for m in client.assessments_metadata.list() if getattr(m, "name", None)}
-    except Exception as e:
+    except HttpResponseError as e:
+        errors.append(utils.error_record("assessment metadata", "assessments_metadata.list", e))
         log.warning("Failed to list assessment metadata — severity/category/remediation will be blank: %s", e)
         return {}
 
@@ -92,46 +94,43 @@ def _build_row(a, metadata_map: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def collect_assessments(subscription_id: str) -> list:
+def collect_assessments(subscription_id: str) -> tuple:
+    """Return (rows, errors). The assessment listing itself is not caught: its failure is the run's failure."""
     client = utils.get_azure_client("security", subscription_id)
     log.info("Listing security assessments for subscription %s", subscription_id)
 
     rows = []
+    errors: list = []
     metadata_map: dict[str, Any] = {}
     metadata_loaded = False
-    try:
-        for a in client.assessments.list(scope=f"/subscriptions/{subscription_id}"):
-            if not metadata_loaded:
-                metadata_map = collect_assessment_metadata(client)
-                metadata_loaded = True
-            rows.append(_build_row(a, metadata_map))
-    except Exception as e:
-        log.warning("Failed to list assessments: %s", e)
+    for a in client.assessments.list(scope=f"/subscriptions/{subscription_id}"):
+        if not metadata_loaded:
+            metadata_map = collect_assessment_metadata(client, errors)
+            metadata_loaded = True
+        rows.append(_build_row(a, metadata_map))
 
-    return rows
+    return rows, errors
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("security", environment):
         sys.exit(0)
 
-    rows = collect_assessments(subscription_id)
+    rows, errors = collect_assessments(subscription_id)
 
     if not rows:
-        print("No security assessments found.")
-        return
+        raise utils.NoResourcesFound("security assessments")
 
     df = pd.DataFrame(rows)
     filename = utils.create_export_filename(subscription_name, "defender-assessments", "all")
-    utils.save_dataframe_to_excel(df, filename)
+    utils.save_dataframe_to_excel(df, filename, errors=errors)
     print(f"Exported {len(rows)} assessment(s) → {filename}")
     log.info("Export complete: %d assessments", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=errors)
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "defender-assessments")

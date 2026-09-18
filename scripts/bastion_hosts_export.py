@@ -47,15 +47,14 @@ def _public_ip(bastion) -> str:
     return pip_id.split("/")[-1] if pip_id else ""
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("network", environment):
         sys.exit(0)
 
     hosts = collect_bastion_hosts(subscription_id)
     if not hosts:
-        print("No bastion hosts found.")
-        return
+        raise utils.NoResourcesFound("bastion hosts")
 
     rows = []
     for bastion in hosts:
@@ -81,11 +80,10 @@ def main(subscription_id: str, subscription_name: str) -> None:
     utils.save_dataframe_to_excel(df, filename, sheet_name="Bastion Hosts")
     print(f"Exported {len(rows)} bastion host(s) → {filename}")
     log.info("Export complete: %d bastion hosts", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=[])
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "bastion-hosts")

@@ -24,15 +24,14 @@ def collect_profiles(subscription_id: str) -> list:
     return list(client.profiles.list_by_subscription())
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("trafficmanager", environment):
         sys.exit(0)
 
     profiles = collect_profiles(subscription_id)
     if not profiles:
-        print("No Traffic Manager profiles found.")
-        return
+        raise utils.NoResourcesFound("Traffic Manager profiles")
 
     rows = []
     for prof in profiles:
@@ -58,11 +57,10 @@ def main(subscription_id: str, subscription_name: str) -> None:
     utils.save_dataframe_to_excel(df, filename, sheet_name="Traffic Manager")
     print(f"Exported {len(rows)} Traffic Manager profile(s) → {filename}")
     log.info("Export complete: %d profiles", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=[])
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "traffic-manager")

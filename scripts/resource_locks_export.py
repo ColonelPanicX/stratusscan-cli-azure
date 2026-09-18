@@ -47,15 +47,14 @@ def _resource_name_and_type(scope: str) -> tuple:
     return "", ""
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("locks", environment):
         sys.exit(0)
 
     locks = collect_locks(subscription_id)
     if not locks:
-        print("No resource locks found.")
-        return
+        raise utils.NoResourcesFound("resource locks")
 
     rows = []
     for lock in locks:
@@ -76,11 +75,10 @@ def main(subscription_id: str, subscription_name: str) -> None:
     utils.save_dataframe_to_excel(df, filename, sheet_name="Resource Locks")
     print(f"Exported {len(rows)} resource lock(s) → {filename}")
     log.info("Export complete: %d locks", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=[])
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "resource-locks")

@@ -11,6 +11,7 @@ except ImportError:
     import utils
 
 import pandas as pd
+from azure.core.exceptions import HttpResponseError
 
 utils.setup_logging("blob-containers-export")
 utils.log_script_start("blob_containers_export.py", "Blob Containers Inventory Export")
@@ -24,7 +25,7 @@ def _iter_accounts(client):
         yield rg, acct.name
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("storage", environment):
         sys.exit(0)
@@ -33,6 +34,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
     log.info("Listing blob containers across storage accounts in %s", subscription_id)
 
     rows = []
+    errors: list = []
     for rg, account in _iter_accounts(client):
         try:
             for c in client.blob_containers.list(rg, account):
@@ -49,23 +51,22 @@ def main(subscription_id: str, subscription_name: str) -> None:
                     "Last Modified": utils.s(getattr(c, "last_modified_time", None)) if getattr(c, "last_modified_time", None) else "",
                     "Metadata": "; ".join(f"{k}={v}" for k, v in metadata.items()),
                 })
-        except Exception as e:
+        except HttpResponseError as e:
+            errors.append(utils.error_record(account, "blob_containers.list", e))
             log.warning("Failed to list containers for account %s: %s", account, e)
 
-    if not rows:
-        print("No blob containers found.")
-        return
+    if not rows and not errors:
+        raise utils.NoResourcesFound("blob containers")
 
     df = pd.DataFrame(rows)
     filename = utils.create_export_filename(subscription_name, "blob-containers", "all")
-    utils.save_dataframe_to_excel(df, filename, sheet_name="Blob Containers")
+    utils.save_dataframe_to_excel(df, filename, sheet_name="Blob Containers", errors=errors)
     print(f"Exported {len(rows)} blob container(s) → {filename}")
     log.info("Export complete: %d containers", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=errors)
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "blob-containers")

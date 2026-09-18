@@ -32,15 +32,14 @@ def _container_images(app) -> str:
         return ""
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("appcontainers", environment):
         sys.exit(0)
 
     apps = collect_apps(subscription_id)
     if not apps:
-        print("No container apps found.")
-        return
+        raise utils.NoResourcesFound("container apps")
 
     rows = []
     for app in apps:
@@ -67,11 +66,10 @@ def main(subscription_id: str, subscription_name: str) -> None:
     utils.save_dataframe_to_excel(df, filename, sheet_name="Container Apps")
     print(f"Exported {len(rows)} container app(s) → {filename}")
     log.info("Export complete: %d container apps", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=[])
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "container-apps")

@@ -44,15 +44,14 @@ def _total_resources(group) -> str:
         return ""
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("containerinstance", environment):
         sys.exit(0)
 
     groups = collect_groups(subscription_id)
     if not groups:
-        print("No container groups found.")
-        return
+        raise utils.NoResourcesFound("container groups")
 
     rows = []
     for group in groups:
@@ -79,11 +78,10 @@ def main(subscription_id: str, subscription_name: str) -> None:
     utils.save_dataframe_to_excel(df, filename, sheet_name="Container Instances")
     print(f"Exported {len(rows)} container group(s) → {filename}")
     log.info("Export complete: %d container groups", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=[])
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "container-instances")

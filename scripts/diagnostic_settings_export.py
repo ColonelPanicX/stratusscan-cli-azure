@@ -60,15 +60,14 @@ def _max_retention(setting) -> str:
     return str(max(days)) if days else ""
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("monitor", environment):
         sys.exit(0)
 
     resources = collect_resources(subscription_id)
     if not resources:
-        print("No resources found.")
-        return
+        raise utils.NoResourcesFound("resources")
 
     monitor = utils.get_azure_client("monitor", subscription_id)
     log.info("Auditing diagnostic settings across %d resources (one API call each)", len(resources))
@@ -117,11 +116,10 @@ def main(subscription_id: str, subscription_name: str) -> None:
     enabled = sum(1 for row in summary_rows if row["Has Diagnostics"] == "Yes")
     print(f"Audited {len(summary_rows)} resource(s): {enabled} with diagnostics, {len(detail_rows)} setting(s) → {filename}")
     log.info("Export complete: %d resources audited, %d settings", len(summary_rows), len(detail_rows))
+    return utils.ExportResult(rows=len(summary_rows), filename=filename, errors=[])
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "diagnostic-settings")

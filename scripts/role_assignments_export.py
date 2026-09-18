@@ -17,6 +17,7 @@ except ImportError:
     import utils
 
 import pandas as pd
+from azure.core.exceptions import HttpResponseError
 
 utils.setup_logging("role-assignments-export")
 utils.log_script_start("role_assignments_export.py", "Azure RBAC Role Assignments Export")
@@ -33,20 +34,23 @@ def collect_role_assignments(subscription_id: str) -> list:
     return list(client.role_assignments.list_for_scope(scope))
 
 
-def collect_role_definitions(subscription_id: str) -> dict[str, Any]:
-    """Return {role definition GUID (lowercase): RoleDefinition} for every definition visible at subscription scope."""
+def collect_role_definitions(subscription_id: str) -> tuple:
+    """Return ({role definition GUID (lowercase): RoleDefinition}, errors) for definitions visible at subscription scope."""
     client = utils.get_azure_client("authorization", subscription_id)
     scope = f"/subscriptions/{subscription_id}"
     log.info("Listing role definitions for subscription %s", subscription_id)
+    errors: list = []
     try:
-        return {
+        definitions = {
             utils.s(rd.name).lower(): rd
             for rd in client.role_definitions.list(scope=scope)
             if getattr(rd, "name", None)
         }
-    except Exception as e:
+    except HttpResponseError as e:
+        errors.append(utils.error_record(scope, "role_definitions.list", e))
         log.warning("Failed to list role definitions — Role Name/Role Type will be blank: %s", e)
-        return {}
+        definitions = {}
+    return definitions, errors
 
 
 def _role_name_from_id(role_definition_id: str) -> str:
@@ -97,29 +101,27 @@ def _build_row(ra, role_definitions: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("authorization", environment):
         sys.exit(0)
 
     assignments = collect_role_assignments(subscription_id)
     if not assignments:
-        print("No role assignments found.")
-        return
+        raise utils.NoResourcesFound("role assignments")
 
-    role_definitions = collect_role_definitions(subscription_id)
+    role_definitions, errors = collect_role_definitions(subscription_id)
     rows = [_build_row(ra, role_definitions) for ra in assignments]
 
     df = pd.DataFrame(rows)
     filename = utils.create_export_filename(subscription_name, "role-assignments", "all")
-    utils.save_dataframe_to_excel(df, filename, sheet_name="Role Assignments")
+    utils.save_dataframe_to_excel(df, filename, sheet_name="Role Assignments", errors=errors)
     print(f"Exported {len(rows)} role assignment(s) → {filename}")
     log.info("Export complete: %d role assignments", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=errors)
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "role-assignments")

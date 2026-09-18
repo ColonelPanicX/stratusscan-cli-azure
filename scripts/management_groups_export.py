@@ -5,7 +5,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from azure.core.exceptions import HttpResponseError
 
 try:
     import utils
@@ -30,10 +29,6 @@ def _error_code(error: BaseException) -> str:
         return f"HTTP {status}"
     return type(error).__name__
 
-
-def _is_authorization_failed(error: HttpResponseError) -> bool:
-    code = getattr(getattr(error, "error", None), "code", "") or ""
-    return code == "AuthorizationFailed" or "AuthorizationFailed" in str(error)
 
 
 def _count_subscriptions(mg) -> int:
@@ -72,16 +67,7 @@ def collect_management_groups() -> list:
     client = utils.get_azure_client("managementgroups")
     log.info("Listing management groups")
 
-    try:
-        groups = list(client.management_groups.list())
-    except HttpResponseError as e:
-        if not _is_authorization_failed(e):
-            raise
-        log.warning(
-            "Skipping management groups export: authenticated identity lacks "
-            "Microsoft.Management/managementGroups/read permission"
-        )
-        sys.exit(0)
+    groups = list(client.management_groups.list())
 
     log.info("Found %d management group(s), fetching details", len(groups))
 
@@ -100,23 +86,21 @@ def collect_management_groups() -> list:
     return rows
 
 
-def main(subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     rows = collect_management_groups()
 
     if not rows:
-        print("No management groups found.")
-        return
+        raise utils.NoResourcesFound("management groups")
 
     df = pd.DataFrame(rows)
     filename = utils.create_export_filename(subscription_name, "management-groups", "all")
     utils.save_dataframe_to_excel(df, filename)
     print(f"Exported {len(rows)} management group(s) → {filename}")
     log.info("Export complete: %d management groups", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=[])
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_name)
+    import runner
+
+    runner.run_exporter(main, "management-groups")

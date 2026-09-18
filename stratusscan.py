@@ -11,9 +11,11 @@ Usage:
     STRATUSSCAN_AUTO_RUN=1 STRATUSSCAN_SUBSCRIPTIONS=sub-id python stratusscan.py
 """
 
+import datetime
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -184,21 +186,127 @@ def _autodiscover_subscriptions() -> list:
 # Subprocess launcher
 # ---------------------------------------------------------------------------
 
-def _run_exporter(script_rel_path: str, sub_id: str, sub_name: str) -> int:
+STATUS_OK = "OK"
+STATUS_EMPTY = "EMPTY"
+STATUS_PARTIAL = "PARTIAL"
+STATUS_CONFIG = "CONFIG"
+STATUS_FAILED = "FAILED"
+STATUS_TIMEOUT = "TIMEOUT"
+STATUS_SKIPPED = "SKIPPED"
+
+STATUS_BY_EXIT_CODE = {0: STATUS_OK, 3: STATUS_EMPTY, 4: STATUS_PARTIAL, 2: STATUS_CONFIG}
+FAILURE_STATUSES = (STATUS_FAILED, STATUS_TIMEOUT, STATUS_PARTIAL, STATUS_CONFIG)
+
+DEFAULT_EXPORTER_TIMEOUT_S = 1800
+
+
+def new_run_id() -> str:
+    return datetime.datetime.now().strftime("%m.%d.%Y-%H%M%S")
+
+
+def exporter_timeout() -> int:
+    return int(os.environ.get("STRATUSSCAN_EXPORTER_TIMEOUT", str(DEFAULT_EXPORTER_TIMEOUT_S)))
+
+
+def status_for_exit_code(rc: int) -> str:
+    return STATUS_BY_EXIT_CODE.get(rc, STATUS_FAILED)
+
+
+def _run_exporter(script_rel_path: str, sub_id: str, sub_name: str, run_id: str) -> tuple:
+    """Run one exporter subprocess; return (status, exit_code, duration_s)."""
     script_path = SCRIPTS_DIR / script_rel_path
     if not script_path.exists():
         print(f"ERROR: Script not found: {script_path}")
-        return 1
+        return STATUS_FAILED, 1, 0.0
 
     env = os.environ.copy()
     env["STRATUSSCAN_SUBSCRIPTION_ID"] = sub_id
     env["STRATUSSCAN_SUBSCRIPTION_NAME"] = sub_name
+    env["STRATUSSCAN_RUN_ID"] = run_id
 
-    result = subprocess.run(
-        [sys.executable, str(script_path)],
-        env=env,
-    )
-    return result.returncode
+    started = time.monotonic()
+    try:
+        result = subprocess.run(
+            [sys.executable, str(script_path)],
+            env=env,
+            timeout=exporter_timeout(),
+        )
+    except subprocess.TimeoutExpired:
+        # subprocess.run kills the child before re-raising TimeoutExpired.
+        duration = round(time.monotonic() - started, 1)
+        utils.record_run_result(
+            run_id=run_id,
+            script=_script_name(script_rel_path),
+            subscription_id=sub_id,
+            subscription_name=sub_name,
+            status=STATUS_TIMEOUT,
+            exit_code=None,
+            rows=None,
+            file=None,
+            errors=0,
+            detail=f"killed after {exporter_timeout()}s",
+            duration_s=duration,
+        )
+        return STATUS_TIMEOUT, None, duration
+    duration = round(time.monotonic() - started, 1)
+    return status_for_exit_code(result.returncode), result.returncode, duration
+
+
+def _script_name(script_rel_path: str) -> str:
+    stem = Path(script_rel_path).stem
+    if stem.endswith("_export"):
+        stem = stem[: -len("_export")]
+    return stem.replace("_", "-")
+
+
+def _manifest_record(run_id: str, script_rel_path: str, sub_id: str) -> dict:
+    """The exporter's own manifest line for this run, if it wrote one."""
+    name = _script_name(script_rel_path)
+    for record in reversed(utils.read_run_results(run_id)):
+        if record.get("script") == name and record.get("subscription_id") == sub_id:
+            return record
+    return {}
+
+
+def _outcome_line(status: str, rc: Optional[int], duration: float, record: dict) -> str:
+    if status == STATUS_OK:
+        if record.get("status") == STATUS_SKIPPED:
+            return f"{STATUS_SKIPPED} ({duration}s)"
+        rows = record.get("rows")
+        rows_part = f"{rows} rows, " if rows is not None else ""
+        return f"OK ({rows_part}{duration}s)"
+    if status == STATUS_EMPTY:
+        return f"EMPTY ({duration}s)"
+    if status == STATUS_PARTIAL:
+        rows = record.get("rows")
+        rows_part = f"{rows} rows, " if rows is not None else ""
+        return f"PARTIAL ({rows_part}{record.get('errors', '?')} errors, {duration}s)"
+    if status == STATUS_TIMEOUT:
+        return f"TIMEOUT (killed after {exporter_timeout()}s)"
+    if status == STATUS_CONFIG:
+        return f"CONFIG (exit {rc})"
+    return f"FAILED (exit {rc})"
+
+
+def _launch(label: str, path: str, sub_id: str, sub_name: str, run_id: str, outcomes: list) -> str:
+    """Run one exporter, print its outcome line, append to outcomes; return the status."""
+    print(f"  → {label}...", end=" ", flush=True)
+    status, rc, duration = _run_exporter(path, sub_id, sub_name, run_id)
+    record = _manifest_record(run_id, path, sub_id)
+    if status == STATUS_OK and record.get("status") == STATUS_SKIPPED:
+        status = STATUS_SKIPPED
+    print(_outcome_line(status, rc, duration, record))
+    outcomes.append({
+        "Exporter": label,
+        "Subscription": sub_name,
+        "Status": status,
+        "Rows": record.get("rows", ""),
+        "Errors": record.get("errors", 0) if status == STATUS_PARTIAL else "",
+        "Duration (s)": duration,
+        "File": record.get("file") or "",
+        "Exit Code": "" if rc is None else rc,
+    })
+    return status
 
 
 # ---------------------------------------------------------------------------
@@ -265,11 +373,60 @@ def _select_run_all_subs(subs: list):
     return primary
 
 
-def _run_exporter_across(path: str, label: str, subs: list) -> None:
-    for sub_id, sub_name in subs:
-        if len(subs) > 1:
-            print(f"  [{sub_name}]", end=" ", flush=True)
-        _run_exporter(path, sub_id, sub_name)
+def _run_exporter_across(path: str, label: str, subs: list) -> list:
+    """Run one exporter per subscription; return the outcome rows."""
+    run_id = new_run_id()
+    outcomes: list = []
+    try:
+        for sub_id, sub_name in subs:
+            _launch(f"{label} [{sub_name}]" if len(subs) > 1 else label, path, sub_id, sub_name, run_id, outcomes)
+    except KeyboardInterrupt:
+        print("\nInterrupted.")
+        _print_status_summary(outcomes)
+        sys.exit(130)
+    return outcomes
+
+
+def _status_counts(outcomes: list) -> dict:
+    counts: dict = {}
+    for outcome in outcomes:
+        counts[outcome["Status"]] = counts.get(outcome["Status"], 0) + 1
+    return counts
+
+
+def _print_status_summary(outcomes: list) -> None:
+    counts = _status_counts(outcomes)
+    parts = [f"{count} {status}" for status, count in sorted(counts.items())]
+    print(f"\n{len(outcomes)} exporter run(s): {', '.join(parts) if parts else 'none completed'}")
+    problems = [
+        f"{o['Exporter']} [{o['Subscription']}]" for o in outcomes if o["Status"] in FAILURE_STATUSES
+    ]
+    if problems:
+        print(f"Needs attention: {', '.join(problems)}")
+
+
+def has_failures(outcomes: list) -> bool:
+    return any(o["Status"] in FAILURE_STATUSES for o in outcomes)
+
+
+RUN_REPORT_COLUMNS = [
+    "Exporter", "Subscription", "Status", "Rows", "Errors", "Duration (s)", "File", "Exit Code",
+]
+
+
+def write_run_report(outcomes: list, label: str, run_id: str) -> Optional[str]:
+    """Write output/run-report-{label}-{run_id}.xlsx; return its path (None when there is nothing to report)."""
+    if not outcomes:
+        return None
+    import pandas as pd
+
+    out_dir = Path(utils.__file__).parent / "output"
+    out_dir.mkdir(exist_ok=True)
+    path = out_dir / f"run-report-{label}-{run_id}.xlsx"
+    utils.save_dataframe_to_excel(
+        pd.DataFrame(outcomes, columns=RUN_REPORT_COLUMNS), str(path), sheet_name="Run Report"
+    )
+    return str(path)
 
 
 def _run_all_exporters(
@@ -277,35 +434,41 @@ def _run_all_exporters(
     subs: list,
     package_outputs: bool = False,
     package_label: Optional[str] = None,
-) -> None:
-    print(f"\nRunning {len(exporters)} exporter(s) across {_subs_label(subs)}...\n")
-    failed = []
-    for sub_id, sub_name in subs:
-        if len(subs) > 1:
-            print(f"=== Subscription: {sub_name} ({sub_id}) ===")
-        for label, path in exporters:
-            print(f"  → {label}...", end=" ", flush=True)
-            rc = _run_exporter(path, sub_id, sub_name)
-            if rc == 0:
-                print("done")
-            else:
-                print(f"FAILED (exit {rc})")
-                failed.append(f"{label} [{sub_name}]" if len(subs) > 1 else label)
-        if len(subs) > 1:
-            print()
-    print()
-    total = len(exporters) * len(subs)
-    if failed:
-        print(f"Completed with {len(failed)}/{total} failure(s): {', '.join(failed)}")
-    else:
-        print(f"All {total} exporter run(s) completed successfully.")
+) -> list:
+    """Run every exporter for every subscription; return the outcome rows (also written to the run report)."""
+    run_id = new_run_id()
+    label = package_label or "all"
+    print(f"\nRunning {len(exporters)} exporter(s) across {_subs_label(subs)}...  (run {run_id})\n")
+    outcomes: list = []
+    interrupted = False
+    try:
+        for sub_id, sub_name in subs:
+            if len(subs) > 1:
+                print(f"=== Subscription: {sub_name} ({sub_id}) ===")
+            for exporter_label, path in exporters:
+                _launch(exporter_label, path, sub_id, sub_name, run_id, outcomes)
+            if len(subs) > 1:
+                print()
+    except KeyboardInterrupt:
+        # subprocess.run forwards the SIGINT to the child and waits for it, so
+        # nothing is left running by the time we get here.
+        interrupted = True
+        print("\nInterrupted — reporting what completed.")
 
-    if package_outputs:
-        _package_outputs(package_label)
+    _print_status_summary(outcomes)
+    report_path = write_run_report(outcomes, label, run_id)
+    if report_path:
+        print(f"Run report → {report_path}")
+
+    if package_outputs and not interrupted:
+        _package_outputs(label, run_id)
+    if interrupted:
+        sys.exit(130)
+    return outcomes
 
 
-def _package_outputs(label: Optional[str] = None) -> None:
-    zip_path = utils.archive_outputs(label)
+def _package_outputs(label: Optional[str] = None, run_id: Optional[str] = None) -> None:
+    zip_path = utils.archive_outputs(label, run_id)
     if not zip_path:
         print("\nNo exports found in output/ to package.")
         return
@@ -441,13 +604,13 @@ def main() -> None:
             print("\nNo subscriptions to scan (none set, configured, or discoverable).")
             sys.exit(1)
         print(f"\nAuto-run: scanning {_subs_label(subs)}")
-        _run_all_exporters(
+        outcomes = _run_all_exporters(
             TIER1_EXPORTERS + TIER2_EXPORTERS + GOVERNANCE_EXPORTERS + MONITORING_EXPORTERS,
             subs,
             package_outputs=True,
             package_label="all",
         )
-        return
+        sys.exit(1 if has_failures(outcomes) else 0)
 
     subs = _active_subscriptions() or _autodiscover_subscriptions()
     if not subs:

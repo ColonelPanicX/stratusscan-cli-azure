@@ -124,14 +124,7 @@ def collect_metric_alerts(subscription_id: str) -> list:
     client = utils.get_azure_client("monitor", subscription_id)
     log.info("Listing metric alert rules for subscription %s", subscription_id)
 
-    rows = []
-    try:
-        for alert in client.metric_alerts.list_by_subscription():
-            rows.append(_build_metric_alert_row(alert))
-    except Exception as e:
-        log.warning("Failed to list metric alerts: %s", e)
-
-    return rows
+    return [_build_metric_alert_row(alert) for alert in client.metric_alerts.list_by_subscription()]
 
 
 def collect_activity_log_alerts(subscription_id: str) -> list:
@@ -139,45 +132,41 @@ def collect_activity_log_alerts(subscription_id: str) -> list:
     log.info("Listing activity log alert rules for subscription %s", subscription_id)
 
     rows = []
-    try:
-        for alert in client.activity_log_alerts.list_by_subscription_id():
-            alert_id = getattr(alert, "id", "") or ""
-            rg = utils.extract_resource_group(alert_id)
+    for alert in client.activity_log_alerts.list_by_subscription_id():
+        alert_id = getattr(alert, "id", "") or ""
+        rg = utils.extract_resource_group(alert_id)
 
-            conditions = []
-            condition = getattr(alert, "condition", None)
-            if condition:
-                all_of = getattr(condition, "all_of", None) or []
-                for c in all_of:
-                    field = getattr(c, "field", "") or ""
-                    equals = getattr(c, "equals", "") or ""
-                    if field:
-                        conditions.append(f"{field}={equals}")
+        conditions = []
+        condition = getattr(alert, "condition", None)
+        if condition:
+            all_of = getattr(condition, "all_of", None) or []
+            for c in all_of:
+                field = getattr(c, "field", "") or ""
+                equals = getattr(c, "equals", "") or ""
+                if field:
+                    conditions.append(f"{field}={equals}")
 
-            actions_obj = getattr(alert, "actions", None)
-            action_groups = []
-            if actions_obj:
-                ag_list = getattr(actions_obj, "action_groups", None) or []
-                for ag in ag_list:
-                    ag_id = getattr(ag, "action_group_id", "") or ""
-                    action_groups.append(ag_id.split("/")[-1] if ag_id else "")
+        actions_obj = getattr(alert, "actions", None)
+        action_groups = []
+        if actions_obj:
+            ag_list = getattr(actions_obj, "action_groups", None) or []
+            for ag in ag_list:
+                ag_id = getattr(ag, "action_group_id", "") or ""
+                action_groups.append(ag_id.split("/")[-1] if ag_id else "")
 
-            rows.append({
-                "Alert Name": getattr(alert, "name", "") or "",
-                "Resource Group": rg,
-                "Enabled": "Yes" if getattr(alert, "enabled", True) else "No",
-                "Scopes": _format_scopes(getattr(alert, "scopes", None)),
-                "Conditions": "; ".join(conditions),
-                "Action Groups": ", ".join(g for g in action_groups if g),
-                "Description": getattr(alert, "description", "") or "",
-            })
-    except Exception as e:
-        log.warning("Failed to list activity log alerts: %s", e)
-
+        rows.append({
+            "Alert Name": getattr(alert, "name", "") or "",
+            "Resource Group": rg,
+            "Enabled": "Yes" if getattr(alert, "enabled", True) else "No",
+            "Scopes": _format_scopes(getattr(alert, "scopes", None)),
+            "Conditions": "; ".join(conditions),
+            "Action Groups": ", ".join(g for g in action_groups if g),
+            "Description": getattr(alert, "description", "") or "",
+        })
     return rows
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("resource", environment):
         sys.exit(0)
@@ -186,8 +175,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
     activity_rows = collect_activity_log_alerts(subscription_id)
 
     if not metric_rows and not activity_rows:
-        print("No metric or activity log alerts found.")
-        return
+        raise utils.NoResourcesFound("metric or activity log alerts")
 
     sheets = {}
     if metric_rows:
@@ -199,11 +187,10 @@ def main(subscription_id: str, subscription_name: str) -> None:
     utils.save_multiple_dataframes_to_excel(sheets, filename)
     print(f"Exported {len(metric_rows)} metric alert(s), {len(activity_rows)} activity log alert(s) → {filename}")
     log.info("Export complete: %d metric alerts, %d activity log alerts", len(metric_rows), len(activity_rows))
+    return utils.ExportResult(rows=len(metric_rows) + len(activity_rows), filename=filename, errors=[])
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "metric-alerts")

@@ -25,15 +25,14 @@ def collect_resources(subscription_id: str) -> list:
     return list(client.resources.list())
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("resource", environment):
         sys.exit(0)
 
     resources = collect_resources(subscription_id)
     if not resources:
-        print("No resources found.")
-        return
+        raise utils.NoResourcesFound("resources")
 
     coverage_rows = []
     key_counts = defaultdict(int)
@@ -74,11 +73,10 @@ def main(subscription_id: str, subscription_name: str) -> None:
     tagged = sum(1 for row in coverage_rows if row["Tagged"] == "Yes")
     print(f"Exported {len(coverage_rows)} resource(s), {tagged} tagged, {len(key_rows)} unique tag key(s) → {filename}")
     log.info("Export complete: %d resources, %d tag keys", len(coverage_rows), len(key_rows))
+    return utils.ExportResult(rows=len(coverage_rows) + len(key_rows), filename=filename, errors=[])
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "resource-tags")

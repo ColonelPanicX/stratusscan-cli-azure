@@ -122,15 +122,14 @@ def _flatten_rules(nsg) -> list:
     return rows
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("network", environment):
         sys.exit(0)
 
     nsgs = collect_nsgs(subscription_id)
     if not nsgs:
-        print("No network security groups found.")
-        return
+        raise utils.NoResourcesFound("network security groups")
 
     rows = []
     rule_rows = []
@@ -175,11 +174,10 @@ def main(subscription_id: str, subscription_name: str) -> None:
     )
     print(f"Exported {len(rows)} NSG(s) and {len(rule_rows)} rule(s) → {filename}")
     log.info("Export complete: %d NSGs, %d flattened rules", len(rows), len(rule_rows))
+    return utils.ExportResult(rows=len(rows) + len(rule_rows), filename=filename, errors=[])
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "network-security-groups")

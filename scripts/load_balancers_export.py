@@ -24,15 +24,14 @@ def collect_load_balancers(subscription_id: str) -> list:
     return list(client.load_balancers.list_all())
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("network", environment):
         sys.exit(0)
 
     lbs = collect_load_balancers(subscription_id)
     if not lbs:
-        print("No load balancers found.")
-        return
+        raise utils.NoResourcesFound("load balancers")
 
     rows = []
     for lb in lbs:
@@ -60,11 +59,10 @@ def main(subscription_id: str, subscription_name: str) -> None:
     utils.save_dataframe_to_excel(df, filename, sheet_name="Load Balancers")
     print(f"Exported {len(rows)} load balancer(s) → {filename}")
     log.info("Export complete: %d load balancers", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=[])
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "load-balancers")

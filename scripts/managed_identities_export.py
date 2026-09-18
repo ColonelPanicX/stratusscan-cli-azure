@@ -24,15 +24,14 @@ def collect_identities(subscription_id: str) -> list:
     return list(client.user_assigned_identities.list_by_subscription())
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("msi", environment):
         sys.exit(0)
 
     identities = collect_identities(subscription_id)
     if not identities:
-        print("No user-assigned managed identities found.")
-        return
+        raise utils.NoResourcesFound("user-assigned managed identities")
 
     rows = []
     for ident in identities:
@@ -52,11 +51,10 @@ def main(subscription_id: str, subscription_name: str) -> None:
     utils.save_dataframe_to_excel(df, filename, sheet_name="Managed Identities")
     print(f"Exported {len(rows)} managed identit(ies) → {filename}")
     log.info("Export complete: %d identities", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=[])
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "managed-identities")

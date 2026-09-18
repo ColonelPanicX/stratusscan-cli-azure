@@ -22,6 +22,7 @@ import platform
 import sys
 import threading
 import warnings
+from dataclasses import dataclass, field
 from importlib.metadata import version as _pkg_version, PackageNotFoundError
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
@@ -58,7 +59,22 @@ def _cleanup_old_logs(logs_dir: Path, retention_days: int = 14) -> None:
         pass
 
 
-def setup_logging(script_name: str = "stratusscan", log_to_file: bool = True) -> logging.Logger:
+def _log_subscription_tag(subscription_id: Optional[str]) -> str:
+    sub_id = (subscription_id or os.environ.get("STRATUSSCAN_SUBSCRIPTION_ID", "")).strip()
+    return sub_id[:8] if sub_id else "nosub"
+
+
+def setup_logging(
+    script_name: str = "stratusscan",
+    log_to_file: bool = True,
+    subscription_id: Optional[str] = None,
+) -> logging.Logger:
+    """
+    Configure the shared logger. Exporters call this at import time, before the
+    runner has resolved a subscription, so the file name falls back to the
+    STRATUSSCAN_SUBSCRIPTION_ID the orchestrator injects — that is what keeps a
+    multi-subscription Run All from overwriting one subscription's log with another's.
+    """
     global logger, _logging_configured
 
     logger = logging.getLogger("stratusscan")
@@ -81,8 +97,9 @@ def setup_logging(script_name: str = "stratusscan", log_to_file: bool = True) ->
             logs_dir = Path(__file__).parent / "logs"
             logs_dir.mkdir(exist_ok=True)
             _cleanup_old_logs(logs_dir)
-            timestamp = datetime.datetime.now().strftime("%m.%d.%Y-%H%M")
-            log_path = logs_dir / f"logs-{script_name}-{timestamp}.log"
+            timestamp = datetime.datetime.now().strftime("%m.%d.%Y-%H%M%S")
+            sub_tag = _log_subscription_tag(subscription_id)
+            log_path = logs_dir / f"logs-{script_name}-{sub_tag}-{timestamp}.log"
             fh = logging.FileHandler(log_path, mode="w", encoding="utf-8")
             fh.setLevel(logging.DEBUG)
             fh.setFormatter(file_fmt)
@@ -183,25 +200,174 @@ def extract_resource_group(resource_id: Optional[str]) -> str:
     return ""
 
 
-def archive_outputs(label: Optional[str] = None) -> Optional[str]:
+def _output_dir() -> Path:
+    out_dir = Path(__file__).parent / "output"
+    out_dir.mkdir(exist_ok=True)
+    return out_dir
+
+
+def _run_files(out_dir: Path, run_id: str) -> List[Path]:
+    """Workbooks the manifest attributes to run_id, plus that run's report, that still exist."""
+    files: Dict[str, Path] = {}
+    for record in read_run_results(run_id):
+        path = record.get("file")
+        if path and Path(path).exists():
+            files[str(Path(path).resolve())] = Path(path)
+    for report in out_dir.glob(f"run-report-*-{run_id}.xlsx"):
+        files[str(report.resolve())] = report
+    return sorted(files.values(), key=lambda p: p.name)
+
+
+def archive_outputs(label: Optional[str] = None, run_id: Optional[str] = None) -> Optional[str]:
     """
-    Bundle every .xlsx in output/ into a single dated zip.
+    Bundle exports from output/ into a single zip.
+
+    With run_id, only the workbooks the run manifest attributes to that run (plus
+    the run report) are included — output/ persists across Cloud Shell sessions,
+    so a blanket glob would commingle stale runs, other subscriptions and other
+    engagements into an evidence package. Without run_id, every .xlsx is bundled.
 
     Returns the zip path, or None if there are no exports to archive.
     """
+    import re
     import zipfile
 
-    out_dir = Path(__file__).parent / "output"
-    exports = sorted(out_dir.glob("*.xlsx"))
+    out_dir = _output_dir()
+    if run_id:
+        exports = _run_files(out_dir, run_id)
+        stamp = re.sub(r"[^\w.\-]", "-", run_id).strip("-")
+    else:
+        exports = sorted(out_dir.glob("*.xlsx"))
+        stamp = get_current_timestamp()
     if not exports:
         return None
 
     label_part = f"-{_sanitize_name(label).lower()}" if label else ""
-    zip_path = out_dir / f"exports{label_part}-{get_current_timestamp()}.zip"
+    zip_path = out_dir / f"exports{label_part}-{stamp}.zip"
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for export in exports:
             zf.write(export, arcname=export.name)
     return str(zip_path)
+
+
+# ---------------------------------------------------------------------------
+# Export outcome contract
+# ---------------------------------------------------------------------------
+
+class NoResourcesFound(Exception):  # noqa: N818 — a control-flow signal (exit 3), not an error
+    """
+    Raised by an exporter's main() when the primary listing returned nothing.
+
+    The argument is the plural noun ("storage accounts"); the runner prints the
+    message and exits 3 so an empty inventory is never confused with a failure
+    or with a run that never happened.
+    """
+
+    def __init__(self, noun: str) -> None:
+        super().__init__(f"No {noun} found.")
+        self.noun = noun
+
+
+ERROR_COLUMNS = ("Scope", "Operation", "Error Code", "Message")
+
+
+@dataclass
+class ExportResult:
+    """What an exporter's main() hands back to the runner."""
+
+    rows: int
+    filename: Optional[str]
+    errors: List[Dict[str, str]] = field(default_factory=list)
+
+
+def error_code(exc: BaseException) -> str:
+    """Service error code (e.g. AuthorizationFailed), else HTTP status, else the exception type."""
+    code = getattr(getattr(exc, "error", None), "code", None)
+    if code:
+        return s(code)
+    status = getattr(exc, "status_code", None)
+    if status:
+        return f"HTTP {status}"
+    return type(exc).__name__
+
+
+def error_message(exc: BaseException) -> str:
+    """First non-empty line of the error text — service messages run to many lines."""
+    text = getattr(exc, "message", None) or str(exc)
+    for line in str(text).splitlines():
+        if line.strip():
+            return line.strip()
+    return type(exc).__name__
+
+
+def error_record(scope: str, operation: str, exc: BaseException) -> Dict[str, str]:
+    """One row for the Errors sheet: which parent failed, on which call, and why."""
+    return {
+        "Scope": scope,
+        "Operation": operation,
+        "Error Code": error_code(exc),
+        "Message": error_message(exc),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Run manifest (one JSON line per exporter outcome)
+# ---------------------------------------------------------------------------
+
+_MANIFEST_NAME = ".run-manifest.jsonl"
+
+
+def get_run_id() -> str:
+    return os.environ.get("STRATUSSCAN_RUN_ID", "").strip() or "standalone"
+
+
+def manifest_path() -> Path:
+    return _output_dir() / _MANIFEST_NAME
+
+
+def record_run_result(**fields: Any) -> Optional[str]:
+    """
+    Append one outcome line to output/.run-manifest.jsonl and return its path.
+
+    Recording must never break an export, so an unwritable manifest is logged
+    and swallowed here — the exit code still carries the outcome.
+    """
+    record: Dict[str, Any] = {
+        "run_id": get_run_id(),
+        "timestamp": datetime.datetime.now().isoformat(timespec="seconds"),
+    }
+    record.update(fields)
+    try:
+        path = manifest_path()
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record, default=str) + "\n")
+        return str(path)
+    except OSError as exc:
+        get_logger().warning("Run manifest not written: %s", exc)
+        return None
+
+
+def read_run_results(run_id: str) -> List[Dict[str, Any]]:
+    """Return the manifest records for run_id in file order; malformed lines are skipped."""
+    path = manifest_path()
+    if not path.exists():
+        return []
+    records: List[Dict[str, Any]] = []
+    try:
+        with open(path, encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(record, dict) and record.get("run_id") == run_id:
+                    records.append(record)
+    except OSError as exc:
+        get_logger().warning("Run manifest unreadable: %s", exc)
+    return records
 
 
 # ---------------------------------------------------------------------------
@@ -271,14 +437,31 @@ def _normalize_cells(df):
     return out
 
 
-def save_dataframe_to_excel(df, filename: str, sheet_name: str = "Export") -> str:
+def _errors_frame(errors: Optional[List[Dict[str, str]]]):
+    import pandas as pd
+
+    return pd.DataFrame(list(errors or []), columns=list(ERROR_COLUMNS))
+
+
+def save_dataframe_to_excel(
+    df,
+    filename: str,
+    sheet_name: str = "Export",
+    errors: Optional[List[Dict[str, str]]] = None,
+) -> str:
     """
     Write a single DataFrame to an Excel workbook.
+
+    When errors is non-empty an "Errors" sheet (Scope, Operation, Error Code,
+    Message) is appended so a partial export carries its own gaps.
 
     Returns the filename on success, raises on failure.
     """
     import pandas as pd
     from openpyxl import load_workbook
+
+    if errors:
+        return save_multiple_dataframes_to_excel({sheet_name: df}, filename, errors=errors)
 
     log = get_logger()
     try:
@@ -298,18 +481,26 @@ def save_dataframe_to_excel(df, filename: str, sheet_name: str = "Export") -> st
         raise
 
 
-def save_multiple_dataframes_to_excel(sheets: Dict[str, Any], filename: str) -> str:
+def save_multiple_dataframes_to_excel(
+    sheets: Dict[str, Any],
+    filename: str,
+    errors: Optional[List[Dict[str, str]]] = None,
+) -> str:
     """
     Write multiple DataFrames to an Excel workbook, one sheet per key.
 
     Args:
         sheets: {sheet_name: DataFrame}
         filename: target file path
+        errors: per-scope failures; when non-empty an "Errors" sheet is appended last
 
     Returns the filename on success.
     """
     import pandas as pd
     from openpyxl import load_workbook
+
+    if errors:
+        sheets = {**sheets, "Errors": _errors_frame(errors)}
 
     log = get_logger()
     try:

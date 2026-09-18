@@ -59,15 +59,14 @@ def _custom_dns(pe) -> str:
     return ", ".join(cfg.fqdn for cfg in (pe.custom_dns_configs or []) if cfg.fqdn)
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("network", environment):
         sys.exit(0)
 
     endpoints = collect_private_endpoints(subscription_id)
     if not endpoints:
-        print("No private endpoints found.")
-        return
+        raise utils.NoResourcesFound("private endpoints")
 
     rows = []
     for pe in endpoints:
@@ -91,11 +90,10 @@ def main(subscription_id: str, subscription_name: str) -> None:
     utils.save_dataframe_to_excel(df, filename, sheet_name="Private Endpoints")
     print(f"Exported {len(rows)} private endpoint(s) → {filename}")
     log.info("Export complete: %d private endpoints", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=[])
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "private-endpoints")

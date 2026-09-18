@@ -76,15 +76,14 @@ def _build_row(acct) -> dict:
     }
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("cosmosdb", environment):
         sys.exit(0)
 
     accounts = collect_cosmos_accounts(subscription_id)
     if not accounts:
-        print("No Cosmos DB accounts found.")
-        return
+        raise utils.NoResourcesFound("Cosmos DB accounts")
 
     rows = [_build_row(acct) for acct in accounts]
 
@@ -93,11 +92,10 @@ def main(subscription_id: str, subscription_name: str) -> None:
     utils.save_dataframe_to_excel(df, filename, sheet_name="Cosmos DB")
     print(f"Exported {len(rows)} Cosmos DB account(s) → {filename}")
     log.info("Export complete: %d Cosmos DB accounts", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=[])
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "cosmos-db")

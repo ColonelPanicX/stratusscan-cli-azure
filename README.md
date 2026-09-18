@@ -226,6 +226,20 @@ MY-SUBSCRIPTION-role-assignments-all-export-05.06.2026.xlsx
 
 All files land in `output/`.
 
+### Exit codes / run report
+
+Every exporter exits with a documented code, so an empty inventory is never mistaken for a failure:
+
+| Exit code | Status | Meaning |
+|---|---|---|
+| 0 | OK | Workbook written |
+| 1 | FAILED | The export raised — one console line names the Azure error code, the traceback is in `logs/` |
+| 2 | CONFIG | No subscription targeted, unrecognized `AZURE_ENVIRONMENT`, or a missing package |
+| 3 | EMPTY | Zero resources — no workbook written |
+| 4 | PARTIAL | Workbook written, but at least one scope (storage account, SQL server, vault, …) failed — see its `Errors` sheet |
+
+Run All prints one line per exporter (`OK (23 rows, 4.1s)`, `EMPTY`, `PARTIAL (3 errors)`, `FAILED (exit 1)`, `TIMEOUT`), writes `output/run-report-{scope}-{run_id}.xlsx`, and zips only that run's workbooks plus the report. Each exporter is killed after `STRATUSSCAN_EXPORTER_TIMEOUT` seconds (default 1800). In CI mode `stratusscan.py` exits 1 if any exporter was FAILED, TIMEOUT, PARTIAL or CONFIG; EMPTY results do not fail the run.
+
 ---
 
 ## Azure Permissions

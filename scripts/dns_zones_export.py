@@ -63,7 +63,7 @@ def _private_rows(zones: list) -> list:
     return rows
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("dns", environment):
         sys.exit(0)
@@ -72,8 +72,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
     private = _private_rows(collect_private_zones(subscription_id))
 
     if not public and not private:
-        print("No DNS zones found.")
-        return
+        raise utils.NoResourcesFound("DNS zones")
 
     sheets = {}
     if public:
@@ -85,11 +84,10 @@ def main(subscription_id: str, subscription_name: str) -> None:
     utils.save_multiple_dataframes_to_excel(sheets, filename)
     print(f"Exported {len(public)} public + {len(private)} private DNS zone(s) → {filename}")
     log.info("Export complete: %d public, %d private", len(public), len(private))
+    return utils.ExportResult(rows=len(public) + len(private), filename=filename, errors=[])
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "dns-zones")

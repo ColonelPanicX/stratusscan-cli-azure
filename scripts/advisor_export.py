@@ -150,17 +150,10 @@ def collect_recommendations(subscription_id: str) -> list:
     client = utils.get_azure_client("advisor", subscription_id)
     log.info("Listing Advisor recommendations for subscription %s", subscription_id)
 
-    rows = []
-    try:
-        for rec in client.recommendations.list():
-            rows.append(_build_row(rec))
-    except Exception as e:
-        log.warning("Failed to list Advisor recommendations: %s", e)
-
-    return rows
+    return [_build_row(rec) for rec in client.recommendations.list()]
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("resource", environment):
         sys.exit(0)
@@ -168,19 +161,17 @@ def main(subscription_id: str, subscription_name: str) -> None:
     rows = collect_recommendations(subscription_id)
 
     if not rows:
-        print("No Advisor recommendations found.")
-        return
+        raise utils.NoResourcesFound("Advisor recommendations")
 
     df = pd.DataFrame(rows)
     filename = utils.create_export_filename(subscription_name, "advisor-recommendations", "all")
     utils.save_dataframe_to_excel(df, filename)
     print(f"Exported {len(rows)} recommendation(s) → {filename}")
     log.info("Export complete: %d recommendations", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=[])
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "advisor")

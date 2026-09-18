@@ -8,8 +8,10 @@ read — this is an inventory tool, not a secrets dump.
 Unlike the management-plane exporters, this reads the Key Vault data plane, which
 requires data-plane permissions (RBAC roles such as Key Vault Reader / Crypto User /
 Secrets User, or vault access policies with list permissions) that the read-only
-management role does NOT grant. Vaults the caller cannot read are skipped with a
-logged warning rather than failing the run.
+management role does NOT grant, and a vault firewall that admits the caller's
+address. A vault the caller cannot read is reported as unreadable on the
+"Vault Access" sheet (ForbiddenByFirewall vs Forbidden/ForbiddenByRbac) and in the
+Errors sheet — never as an empty vault.
 """
 
 import datetime
@@ -23,6 +25,7 @@ except ImportError:
     import utils
 
 import pandas as pd
+from azure.core.exceptions import HttpResponseError
 from azure.keyvault.certificates import CertificateClient
 from azure.keyvault.keys import KeyClient
 from azure.keyvault.secrets import SecretClient
@@ -31,6 +34,9 @@ utils.setup_logging("key-vault-objects-export")
 utils.log_script_start("key_vault_objects_export.py", "Azure Key Vault Objects Export")
 
 log = utils.get_logger()
+
+ACCESS_OK = "OK"
+ACCESS_COLUMNS = ["Vault", "Keys", "Secrets", "Certificates"]
 
 
 def _fmt_date(value) -> str:
@@ -46,24 +52,35 @@ def _days_until(expires) -> object:
     return (expires - now).days
 
 
-def collect_vault_uris(subscription_id: str) -> list:
+def _access_code(exc: HttpResponseError) -> str:
+    """Key Vault puts the reason for a 403 in innererror.code (ForbiddenByFirewall, ForbiddenByRbac, ...)."""
+    inner = getattr(getattr(exc, "error", None), "innererror", None)
+    inner_code = inner.get("code") if isinstance(inner, dict) else None
+    return utils.s(inner_code) or utils.error_code(exc)
+
+
+def collect_vault_uris(subscription_id: str) -> tuple:
+    """Return ([(vault_name, vault_uri)], errors); a vault whose detail read fails is recorded, not dropped."""
     client = utils.get_azure_client("keyvault", subscription_id)
     log.info("Listing all key vaults in subscription %s", subscription_id)
     uris = []
+    errors: list = []
     for vault_ref in client.vaults.list():
         rg = utils.extract_resource_group(vault_ref.id)
         try:
             vault = client.vaults.get(rg, vault_ref.name)
-        except Exception as exc:
+        except HttpResponseError as exc:
+            errors.append(utils.error_record(utils.s(vault_ref.name), "vaults.get", exc))
             log.warning("Could not get vault detail for %s: %s", vault_ref.name, exc)
             continue
         uri = vault.properties.vault_uri if vault.properties else ""
         if uri:
             uris.append((vault_ref.name, uri))
-    return uris
+    return uris, errors
 
 
-def _collect_keys(vault_name: str, uri: str, credential) -> list:
+def _collect_keys(vault_name: str, uri: str, credential) -> tuple:
+    """Return (rows, access): access is ACCESS_OK or the HttpResponseError that blocked the listing."""
     rows = []
     try:
         client = KeyClient(vault_url=uri, credential=credential)
@@ -80,12 +97,13 @@ def _collect_keys(vault_name: str, uri: str, credential) -> list:
                 "Days Until Expiry": _days_until(kp.expires_on),
                 "Recovery Level": kp.recovery_level or "",
             })
-    except Exception as exc:
-        log.warning("Skipping keys for vault %s (no data-plane access?): %s", vault_name, exc)
-    return rows
+    except HttpResponseError as exc:
+        log.warning("Keys unreadable for vault %s: %s", vault_name, exc)
+        return rows, exc
+    return rows, ACCESS_OK
 
 
-def _collect_secrets(vault_name: str, uri: str, credential) -> list:
+def _collect_secrets(vault_name: str, uri: str, credential) -> tuple:
     rows = []
     try:
         client = SecretClient(vault_url=uri, credential=credential)
@@ -102,12 +120,13 @@ def _collect_secrets(vault_name: str, uri: str, credential) -> list:
                 "Expires": _fmt_date(sp.expires_on),
                 "Days Until Expiry": _days_until(sp.expires_on),
             })
-    except Exception as exc:
-        log.warning("Skipping secrets for vault %s (no data-plane access?): %s", vault_name, exc)
-    return rows
+    except HttpResponseError as exc:
+        log.warning("Secrets unreadable for vault %s: %s", vault_name, exc)
+        return rows, exc
+    return rows, ACCESS_OK
 
 
-def _collect_certificates(vault_name: str, uri: str, credential) -> list:
+def _collect_certificates(vault_name: str, uri: str, credential) -> tuple:
     rows = []
     try:
         client = CertificateClient(vault_url=uri, credential=credential)
@@ -122,30 +141,64 @@ def _collect_certificates(vault_name: str, uri: str, credential) -> list:
                 "Expires": _fmt_date(cp.expires_on),
                 "Days Until Expiry": _days_until(cp.expires_on),
             })
-    except Exception as exc:
-        log.warning(
-            "Skipping certificates for vault %s (no data-plane access?): %s", vault_name, exc
-        )
-    return rows
+    except HttpResponseError as exc:
+        log.warning("Certificates unreadable for vault %s: %s", vault_name, exc)
+        return rows, exc
+    return rows, ACCESS_OK
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def _access_cell(vault_name: str, operation: str, access, errors: list) -> str:
+    if access == ACCESS_OK:
+        return ACCESS_OK
+    record = utils.error_record(vault_name, operation, access)
+    record["Error Code"] = _access_code(access)
+    errors.append(record)
+    return record["Error Code"]
+
+
+def collect_vault_objects(vault_uris: list, credential, errors: list) -> tuple:
+    """Return (key_rows, secret_rows, cert_rows, access_rows); every unreadable object type lands in errors."""
+    key_rows, secret_rows, cert_rows, access_rows = [], [], [], []
+    for vault_name, uri in vault_uris:
+        log.info("Reading data-plane objects for vault %s", vault_name)
+        keys, key_access = _collect_keys(vault_name, uri, credential)
+        secrets, secret_access = _collect_secrets(vault_name, uri, credential)
+        certs, cert_access = _collect_certificates(vault_name, uri, credential)
+        key_rows.extend(keys)
+        secret_rows.extend(secrets)
+        cert_rows.extend(certs)
+        access_rows.append({
+            "Vault": vault_name,
+            "Keys": _access_cell(vault_name, "list_properties_of_keys", key_access, errors),
+            "Secrets": _access_cell(vault_name, "list_properties_of_secrets", secret_access, errors),
+            "Certificates": _access_cell(
+                vault_name, "list_properties_of_certificates", cert_access, errors
+            ),
+        })
+    return key_rows, secret_rows, cert_rows, access_rows
+
+
+def _unreadable_count(access_rows: list) -> int:
+    return sum(
+        1 for row in access_rows
+        if any(row[column] != ACCESS_OK for column in ACCESS_COLUMNS[1:])
+    )
+
+
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("keyvault", environment):
         sys.exit(0)
 
-    vault_uris = collect_vault_uris(subscription_id)
-    if not vault_uris:
-        print("No key vaults found.")
-        return
+    vault_uris, errors = collect_vault_uris(subscription_id)
+    if not vault_uris and not errors:
+        raise utils.NoResourcesFound("key vaults")
 
     credential = utils.get_credential()
-    key_rows, secret_rows, cert_rows = [], [], []
-    for vault_name, uri in vault_uris:
-        log.info("Reading data-plane objects for vault %s", vault_name)
-        key_rows.extend(_collect_keys(vault_name, uri, credential))
-        secret_rows.extend(_collect_secrets(vault_name, uri, credential))
-        cert_rows.extend(_collect_certificates(vault_name, uri, credential))
+    key_rows, secret_rows, cert_rows, access_rows = collect_vault_objects(
+        vault_uris, credential, errors
+    )
+    unreadable = _unreadable_count(access_rows)
 
     filename = utils.create_export_filename(subscription_name, "key-vault-objects", "all")
     utils.save_multiple_dataframes_to_excel(
@@ -153,22 +206,29 @@ def main(subscription_id: str, subscription_name: str) -> None:
             "Keys": pd.DataFrame(key_rows),
             "Secrets": pd.DataFrame(secret_rows),
             "Certificates": pd.DataFrame(cert_rows),
+            "Vault Access": pd.DataFrame(access_rows, columns=ACCESS_COLUMNS),
         },
         filename,
+        errors=errors,
     )
     print(
         f"Exported {len(key_rows)} key(s), {len(secret_rows)} secret(s), "
         f"{len(cert_rows)} certificate(s) across {len(vault_uris)} vault(s) → {filename}"
     )
+    if unreadable:
+        print(f"{unreadable} vault(s) partly or wholly unreadable — see the Vault Access sheet.")
     log.info(
-        "Export complete: %d keys, %d secrets, %d certs",
-        len(key_rows), len(secret_rows), len(cert_rows),
+        "Export complete: %d keys, %d secrets, %d certs, %d unreadable vaults",
+        len(key_rows), len(secret_rows), len(cert_rows), unreadable,
+    )
+    return utils.ExportResult(
+        rows=len(key_rows) + len(secret_rows) + len(cert_rows) + len(access_rows),
+        filename=filename,
+        errors=errors,
     )
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "key-vault-objects")

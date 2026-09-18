@@ -24,15 +24,14 @@ def collect_accounts(subscription_id: str) -> list:
     return list(client.automation_account.list())
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("automation", environment):
         sys.exit(0)
 
     accounts = collect_accounts(subscription_id)
     if not accounts:
-        print("No Automation accounts found.")
-        return
+        raise utils.NoResourcesFound("Automation accounts")
 
     rows = []
     for acct in accounts:
@@ -54,11 +53,10 @@ def main(subscription_id: str, subscription_name: str) -> None:
     utils.save_dataframe_to_excel(df, filename, sheet_name="Automation Accounts")
     print(f"Exported {len(rows)} Automation account(s) → {filename}")
     log.info("Export complete: %d accounts", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=[])
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "automation-accounts")

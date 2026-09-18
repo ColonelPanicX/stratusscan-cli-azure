@@ -24,15 +24,14 @@ def collect_firewalls(subscription_id: str) -> list:
     return list(client.azure_firewalls.list_all())
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("network", environment):
         sys.exit(0)
 
     firewalls = collect_firewalls(subscription_id)
     if not firewalls:
-        print("No Azure Firewalls found.")
-        return
+        raise utils.NoResourcesFound("Azure Firewalls")
 
     rows = []
     for fw in firewalls:
@@ -61,11 +60,10 @@ def main(subscription_id: str, subscription_name: str) -> None:
     utils.save_dataframe_to_excel(df, filename, sheet_name="Azure Firewalls")
     print(f"Exported {len(rows)} Azure Firewall(s) → {filename}")
     log.info("Export complete: %d firewalls", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=[])
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "azure-firewall")

@@ -89,7 +89,7 @@ def _build_row(acct, blob_props) -> dict:
     }
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("storage", environment):
         sys.exit(0)
@@ -97,8 +97,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
     client = utils.get_azure_client("storage", subscription_id)
     accounts = collect_storage_accounts(client)
     if not accounts:
-        print("No storage accounts found.")
-        return
+        raise utils.NoResourcesFound("storage accounts")
 
     rows = []
     for acct in accounts:
@@ -111,11 +110,10 @@ def main(subscription_id: str, subscription_name: str) -> None:
     utils.save_dataframe_to_excel(df, filename, sheet_name="Storage Accounts")
     print(f"Exported {len(rows)} storage account(s) → {filename}")
     log.info("Export complete: %d storage accounts", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=[])
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "storage-accounts")

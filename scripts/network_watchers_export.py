@@ -24,15 +24,14 @@ def collect_watchers(subscription_id: str) -> list:
     return list(client.network_watchers.list_all())
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("network", environment):
         sys.exit(0)
 
     watchers = collect_watchers(subscription_id)
     if not watchers:
-        print("No network watchers found.")
-        return
+        raise utils.NoResourcesFound("network watchers")
 
     rows = []
     for w in watchers:
@@ -51,11 +50,10 @@ def main(subscription_id: str, subscription_name: str) -> None:
     utils.save_dataframe_to_excel(df, filename, sheet_name="Network Watchers")
     print(f"Exported {len(rows)} network watcher(s) → {filename}")
     log.info("Export complete: %d watchers", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=[])
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "network-watchers")

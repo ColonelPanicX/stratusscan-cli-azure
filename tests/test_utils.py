@@ -491,3 +491,145 @@ def test_get_azure_client_pip_hint_uses_distribution_name_for_nested_modules(mon
 
     with pytest.raises(ImportError, match=r"^Missing package: pip install azure-mgmt-doesnotexist$"):
         utils.get_azure_client("resource", "sub-id")
+
+
+# --- SSAZR-114: failure ≠ empty ---------------------------------------------------
+
+
+def test_no_resources_found_message_and_noun():
+    exc = utils.NoResourcesFound("storage accounts")
+    assert str(exc) == "No storage accounts found."
+    assert exc.noun == "storage accounts"
+
+
+def test_export_result_defaults_errors_to_a_fresh_list():
+    first = utils.ExportResult(rows=1, filename="a.xlsx")
+    second = utils.ExportResult(rows=2, filename=None)
+    first.errors.append({"Scope": "x"})
+    assert second.errors == []
+
+
+def test_error_record_prefers_service_code_then_status_then_type():
+    from types import SimpleNamespace
+
+    exceptions = pytest.importorskip("azure.core.exceptions")
+    coded = exceptions.HttpResponseError(message="first line\nsecond line")
+    coded.error = SimpleNamespace(code="AuthorizationFailed")
+    assert utils.error_record("rg1", "list", coded) == {
+        "Scope": "rg1", "Operation": "list", "Error Code": "AuthorizationFailed", "Message": "first line",
+    }
+
+    status_only = exceptions.HttpResponseError(message="nope")
+    status_only.status_code = 429
+    assert utils.error_code(status_only) == "HTTP 429"
+
+    assert utils.error_code(RuntimeError("x")) == "RuntimeError"
+    assert utils.error_message(RuntimeError("")) == "RuntimeError"
+
+
+def test_save_dataframe_to_excel_appends_errors_sheet_only_when_errors(tmp_path):
+    pd = pytest.importorskip("pandas")
+    load_workbook = pytest.importorskip("openpyxl").load_workbook
+    df = pd.DataFrame([{"Name": "a"}])
+
+    clean = tmp_path / "clean.xlsx"
+    utils.save_dataframe_to_excel(df, str(clean), sheet_name="Data", errors=[])
+    assert load_workbook(clean).sheetnames == ["Data"]
+
+    partial = tmp_path / "partial.xlsx"
+    errors = [utils.error_record("acct1", "blob_containers.list", RuntimeError("=boom"))]
+    utils.save_dataframe_to_excel(df, str(partial), sheet_name="Data", errors=errors)
+    wb = load_workbook(partial)
+    assert wb.sheetnames == ["Data", "Errors"]
+    ws = wb["Errors"]
+    assert [c.value for c in ws[1]] == list(utils.ERROR_COLUMNS)
+    assert [c.value for c in ws[2]] == ["acct1", "blob_containers.list", "RuntimeError", "'=boom"]
+
+
+def test_save_multiple_dataframes_to_excel_appends_errors_sheet_last(tmp_path):
+    pd = pytest.importorskip("pandas")
+    load_workbook = pytest.importorskip("openpyxl").load_workbook
+    sheets = {"Servers": pd.DataFrame([{"S": 1}]), "Databases": pd.DataFrame([{"D": 2}])}
+    path = tmp_path / "multi.xlsx"
+
+    utils.save_multiple_dataframes_to_excel(sheets, str(path), errors=[{"Scope": "s1", "Operation": "op", "Error Code": "HTTP 403", "Message": "m"}])
+
+    assert load_workbook(path).sheetnames == ["Servers", "Databases", "Errors"]
+    assert list(sheets) == ["Servers", "Databases"]
+
+
+def test_run_manifest_round_trip_filters_by_run_id(monkeypatch, tmp_path):
+    manifest = tmp_path / ".run-manifest.jsonl"
+    monkeypatch.setattr(utils, "manifest_path", lambda: manifest)
+    monkeypatch.setenv("STRATUSSCAN_RUN_ID", "run-1")
+    utils.record_run_result(script="a", status="OK", rows=1)
+    monkeypatch.delenv("STRATUSSCAN_RUN_ID")
+    utils.record_run_result(script="b", status="EMPTY", rows=0)
+    manifest.write_text(manifest.read_text(encoding="utf-8") + "not json\n", encoding="utf-8")
+    utils.record_run_result(run_id="run-1", script="c", status="FAILED")
+
+    run_1 = utils.read_run_results("run-1")
+    assert [(r["script"], r["status"]) for r in run_1] == [("a", "OK"), ("c", "FAILED")]
+    assert all(r["timestamp"] for r in run_1)
+    assert [r["script"] for r in utils.read_run_results("standalone")] == ["b"]
+    assert utils.read_run_results("nope") == []
+
+
+def test_read_run_results_without_manifest_is_empty(monkeypatch, tmp_path):
+    monkeypatch.setattr(utils, "manifest_path", lambda: tmp_path / "missing.jsonl")
+    assert utils.read_run_results("x") == []
+
+
+def test_archive_outputs_with_run_id_excludes_stale_workbooks(monkeypatch, tmp_path):
+    import zipfile
+
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    monkeypatch.setattr(utils, "__file__", str(tmp_path / "utils.py"))
+    this_run = output_dir / "SUB-storage-accounts-all-export-09.18.2026.xlsx"
+    stale = output_dir / "OTHER-vms-all-export-01.01.2026.xlsx"
+    report = output_dir / "run-report-all-09.18.2026-101010.xlsx"
+    gone = output_dir / "SUB-deleted-all-export-09.18.2026.xlsx"
+    for f in (this_run, stale, report):
+        f.write_text("xlsx")
+    monkeypatch.setenv("STRATUSSCAN_RUN_ID", "09.18.2026-101010")
+    utils.record_run_result(script="storage-accounts", status="OK", file=str(this_run))
+    utils.record_run_result(script="vms", status="EMPTY", file=None)
+    utils.record_run_result(script="deleted", status="OK", file=str(gone))
+
+    zip_path = utils.archive_outputs("all", run_id="09.18.2026-101010")
+
+    assert zip_path == str(output_dir / "exports-all-09.18.2026-101010.zip")
+    with zipfile.ZipFile(zip_path) as zf:
+        assert sorted(zf.namelist()) == sorted([this_run.name, report.name])
+    assert utils.archive_outputs("all", run_id="no-such-run") is None
+
+
+def test_setup_logging_filename_carries_script_sub_and_seconds(monkeypatch, tmp_path):
+    import logging
+    import re
+
+    monkeypatch.setattr(utils, "__file__", str(tmp_path / "utils.py"))
+    monkeypatch.delenv("STRATUSSCAN_SUBSCRIPTION_ID", raising=False)
+    try:
+        utils.setup_logging("storage-accounts-export", subscription_id="12345678-aaaa-bbbb-cccc-dddddddddddd")
+        (explicit,) = (tmp_path / "logs").glob("*.log")
+        assert re.fullmatch(
+            r"logs-storage-accounts-export-12345678-\d{2}\.\d{2}\.\d{4}-\d{6}\.log", explicit.name
+        )
+        explicit.unlink()
+
+        monkeypatch.setenv("STRATUSSCAN_SUBSCRIPTION_ID", "abcdef01-0000-0000-0000-000000000000")
+        utils.setup_logging("vms-export")
+        (from_env,) = (tmp_path / "logs").glob("*.log")
+        assert from_env.name.startswith("logs-vms-export-abcdef01-")
+        from_env.unlink()
+
+        monkeypatch.delenv("STRATUSSCAN_SUBSCRIPTION_ID")
+        utils.setup_logging("vms-export")
+        (nosub,) = (tmp_path / "logs").glob("*.log")
+        assert nosub.name.startswith("logs-vms-export-nosub-")
+    finally:
+        for handler in list(logging.getLogger("stratusscan").handlers):
+            handler.close()
+        logging.getLogger("stratusscan").handlers = []

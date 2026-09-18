@@ -41,6 +41,7 @@ No arbitrary prints in shared code.
 ```
 stratusscan.py              # main menu — launches exporters as subprocesses
 configure.py              # subscription/environment config wizard
+runner.py                 # exporter console adapter — exit codes + run manifest (may print)
 utils.py                  # shared library — imported by every exporter
 scripts/                  # all exporters — flat directory, no subdirs
   subscriptions_export.py
@@ -108,18 +109,42 @@ except ImportError:
 
 utils.setup_logging("my-service-export")
 
-environment = utils.detect_environment()
-if not utils.is_service_available_in_environment("myservice", environment):
-    sys.exit(0)
 
-client = utils.get_azure_client("myservice", subscription_id)
-resources = list(client.resource_type.list())
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
+    environment = utils.detect_environment()
+    if not utils.is_service_available_in_environment("myservice", environment):
+        sys.exit(0)
 
-filename = utils.create_export_filename(subscription_name, "my-service", "all")
-utils.save_dataframe_to_excel(df, filename)
+    client = utils.get_azure_client("myservice", subscription_id)
+    resources = list(client.resource_type.list())
+    if not resources:
+        raise utils.NoResourcesFound("resources")
+
+    errors = []  # per-parent HttpResponseError → utils.error_record(scope, operation, exc)
+    filename = utils.create_export_filename(subscription_name, "my-service", "all")
+    utils.save_dataframe_to_excel(df, filename, errors=errors)
+    return utils.ExportResult(rows=len(df), filename=filename, errors=errors)
+
+
+if __name__ == "__main__":
+    import runner
+
+    runner.run_exporter(main, "my-service")
 ```
 
 Azure SDK `.list()` methods return lazy iterators — wrap in `list()` to materialize.
+
+**Failure ≠ empty.** Never wrap a primary listing in `except Exception → []`: a failed call must fail the run. Per-parent loops catch `HttpResponseError` only and record the scope in `errors`, which becomes an `Errors` sheet and exit code 4.
+
+| Exit code | Status | Meaning |
+|---|---|---|
+| 0 | OK | Workbook written |
+| 1 | FAILED | Exception escaped `main` — one console line + hint, traceback in `logs/` |
+| 2 | CONFIG | No subscription targeted / bad `AZURE_ENVIRONMENT` / missing package |
+| 3 | EMPTY | `utils.NoResourcesFound` — zero resources, no workbook |
+| 4 | PARTIAL | Workbook written, ≥1 scope failed — see `Errors` sheet |
+
+`runner.py` appends every outcome to `output/.run-manifest.jsonl` (keyed by `STRATUSSCAN_RUN_ID`); `stratusscan.py` builds `output/run-report-{label}-{run_id}.xlsx` from it and zips only that run's files. Auto-run exits 1 when any exporter is FAILED / TIMEOUT / PARTIAL / CONFIG (EMPTY is fine).
 
 ---
 
@@ -133,8 +158,12 @@ Azure SDK `.list()` methods return lazy iterators — wrap in `list()` to materi
 | `setup_logging(script_name)` | Call once at script start |
 | `get_current_timestamp()` | Returns `MM.DD.YYYY` |
 | `create_export_filename(sub_name, resource_type, suffix)` | Builds output path |
-| `save_dataframe_to_excel(df, filename)` | Single-sheet write + column autofit |
-| `save_multiple_dataframes_to_excel(sheets, filename)` | Multi-sheet write |
+| `save_dataframe_to_excel(df, filename, errors=None)` | Single-sheet write + column autofit; non-empty `errors` appends an `Errors` sheet |
+| `save_multiple_dataframes_to_excel(sheets, filename, errors=None)` | Multi-sheet write; same `Errors` sheet rule |
+| `NoResourcesFound(noun)` / `ExportResult(rows, filename, errors)` | Exporter outcome contract consumed by `runner.py` |
+| `error_record(scope, operation, exc)` | One `Errors` sheet row (Scope, Operation, Error Code, Message) |
+| `record_run_result(**fields)` / `read_run_results(run_id)` | Append / read `output/.run-manifest.jsonl` |
+| `archive_outputs(label, run_id=None)` | Zip exports; with `run_id`, only that run's files + report |
 | `get_config()` | Thread-safe config.json singleton |
 | `is_auto_run()` | CI mode check |
 | `get_auto_subscriptions()` | Reads STRATUSSCAN_SUBSCRIPTIONS env var |

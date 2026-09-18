@@ -49,26 +49,24 @@ def collect_peerings(subscription_id: str) -> list:
     return rows
 
 
-def main(subscription_id: str, subscription_name: str) -> None:
+def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     environment = utils.detect_environment()
     if not utils.is_service_available_in_environment("network", environment):
         sys.exit(0)
 
     rows = collect_peerings(subscription_id)
     if not rows:
-        print("No VNet peerings found.")
-        return
+        raise utils.NoResourcesFound("VNet peerings")
 
     df = pd.DataFrame(rows)
     filename = utils.create_export_filename(subscription_name, "vnet-peerings", "all")
     utils.save_dataframe_to_excel(df, filename, sheet_name="VNet Peerings")
     print(f"Exported {len(rows)} VNet peering(s) → {filename}")
     log.info("Export complete: %d peerings", len(rows))
+    return utils.ExportResult(rows=len(rows), filename=filename, errors=[])
 
 
 if __name__ == "__main__":
-    sub_id, sub_name = utils.resolve_target_subscription()
-    if not sub_id:
-        print("ERROR: No subscription configured. Run configure.py first.")
-        sys.exit(1)
-    main(sub_id, sub_name)
+    import runner
+
+    runner.run_exporter(main, "vnet-peerings")
