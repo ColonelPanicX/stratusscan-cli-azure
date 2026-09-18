@@ -84,7 +84,7 @@ def _extract_nat_rule(rule, base: dict) -> dict:
     row["Target FQDNs"] = ""
     row["Target URLs"] = ""
     row["Translated Address"] = getattr(rule, "translated_address", "") or ""
-    row["Translated Port"] = str(getattr(rule, "translated_port", "") or "")
+    row["Translated Port"] = utils.s(getattr(rule, "translated_port", None))
     return row
 
 

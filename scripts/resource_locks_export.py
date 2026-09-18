@@ -31,9 +31,7 @@ def _scope(lock) -> str:
 
 
 def _resource_group(scope: str) -> str:
-    if "/resourceGroups/" in scope:
-        return scope.split("/resourceGroups/")[1].split("/")[0]
-    return ""
+    return utils.extract_resource_group(scope)
 
 
 def _resource_name_and_type(scope: str) -> tuple:

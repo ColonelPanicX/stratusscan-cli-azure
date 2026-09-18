@@ -17,6 +17,16 @@ utils.log_script_start("public_ips_export.py", "Azure Public IP Addresses Export
 
 log = utils.get_logger()
 
+_RESOURCE_TYPE_LABELS = {
+    "networkinterfaces": "Network Interface",
+    "loadbalancers": "Load Balancer",
+    "applicationgateways": "Application Gateway",
+    "bastionhosts": "Bastion Host",
+    "virtualnetworkgateways": "Virtual Network Gateway",
+    "azurefirewalls": "Azure Firewall",
+    "natgateways": "NAT Gateway",
+}
+
 
 def collect_public_ips(subscription_id: str) -> list:
     client = utils.get_azure_client("network", subscription_id)
@@ -24,19 +34,49 @@ def collect_public_ips(subscription_id: str) -> list:
     return list(client.public_ip_addresses.list_all())
 
 
-def _associated_resource(pip) -> str:
-    """Return the name of the resource this IP is associated with."""
-    try:
-        if pip.ip_configuration and pip.ip_configuration.id:
-            parts = pip.ip_configuration.id.split("/")
-            # .../resourceGroups/rg/providers/Microsoft.Network/networkInterfaces/nic/...
-            if "networkInterfaces" in parts:
-                return parts[parts.index("networkInterfaces") + 1]
-            if "loadBalancers" in parts:
-                return parts[parts.index("loadBalancers") + 1]
-    except Exception:
-        pass
-    return ""
+def _parse_network_resource(resource_id: str) -> tuple:
+    """Return (type label, name) for the Microsoft.Network resource that owns resource_id."""
+    parts = resource_id.split("/")
+    lowered = [p.lower() for p in parts]
+    for i, part in enumerate(lowered):
+        if part == "providers" and i + 3 < len(parts) and lowered[i + 1] == "microsoft.network":
+            type_segment = parts[i + 2]
+            label = _RESOURCE_TYPE_LABELS.get(type_segment.lower(), type_segment)
+            return label, parts[i + 3]
+    return "", ""
+
+
+def _association(pip) -> tuple:
+    ip_config = pip.ip_configuration
+    if ip_config and ip_config.id:
+        return _parse_network_resource(ip_config.id)
+    nat_gateway = pip.nat_gateway
+    if nat_gateway and nat_gateway.id:
+        return _RESOURCE_TYPE_LABELS["natgateways"], nat_gateway.id.split("/")[-1]
+    return "", ""
+
+
+def _build_row(pip) -> dict:
+    tags = pip.tags or {}
+    dns = pip.dns_settings
+    resource_type, resource_name = _association(pip)
+    return {
+        "Name": pip.name,
+        "Resource Group": utils.extract_resource_group(pip.id),
+        "Location": pip.location,
+        "IP Address": pip.ip_address or "Not assigned",
+        "Allocation Method": utils.s(pip.public_ip_allocation_method),
+        "SKU": utils.s(pip.sku.name) if pip.sku else "",
+        "Version": utils.s(pip.public_ip_address_version),
+        "DNS Label": dns.domain_name_label if dns and dns.domain_name_label else "",
+        "FQDN": dns.fqdn if dns and dns.fqdn else "",
+        "Associated Resource": resource_name,
+        "Zones": ", ".join(pip.zones) if pip.zones else "",
+        "Provisioning State": utils.s(pip.provisioning_state),
+        "Tags": "; ".join(f"{k}={v}" for k, v in tags.items()),
+        "Associated Resource Type": resource_type,
+        "Attached": bool(resource_type),
+    }
 
 
 def main(subscription_id: str, subscription_name: str) -> None:
@@ -49,33 +89,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
         print("No public IP addresses found.")
         return
 
-    rows = []
-    for pip in pips:
-        rg = utils.extract_resource_group(pip.id)
-        tags = pip.tags or {}
-        rows.append({
-            "Name": pip.name,
-            "Resource Group": rg,
-            "Location": pip.location,
-            "IP Address": pip.ip_address or "Not assigned",
-            "Allocation Method": utils.s(pip.public_ip_allocation_method),
-            "SKU": pip.sku.name if pip.sku else "",
-            "Version": utils.s(pip.public_ip_address_version),
-            "DNS Label": (
-                pip.dns_settings.domain_name_label
-                if pip.dns_settings and pip.dns_settings.domain_name_label
-                else ""
-            ),
-            "FQDN": (
-                pip.dns_settings.fqdn
-                if pip.dns_settings and pip.dns_settings.fqdn
-                else ""
-            ),
-            "Associated Resource": _associated_resource(pip),
-            "Zones": ", ".join(pip.zones) if pip.zones else "",
-            "Provisioning State": pip.provisioning_state or "",
-            "Tags": "; ".join(f"{k}={v}" for k, v in tags.items()),
-        })
+    rows = [_build_row(pip) for pip in pips]
 
     df = pd.DataFrame(rows)
     filename = utils.create_export_filename(subscription_name, "public-ips", "all")

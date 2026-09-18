@@ -59,7 +59,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
 
     rows = []
     for bastion in hosts:
-        rg = bastion.id.split("/resourceGroups/")[1].split("/")[0] if bastion.id else ""
+        rg = utils.extract_resource_group(bastion.id)
         vnet, subnet = _vnet_and_subnet(bastion)
         tags = bastion.tags or {}
         rows.append({

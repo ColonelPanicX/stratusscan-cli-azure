@@ -44,7 +44,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
 
     wan_rows = []
     for wan in wans:
-        rg = wan.id.split("/resourceGroups/")[1].split("/")[0] if wan.id else ""
+        rg = utils.extract_resource_group(wan.id)
         tags = wan.tags or {}
         wan_rows.append({
             "Name": wan.name,
@@ -58,7 +58,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
 
     hub_rows = []
     for hub in hubs:
-        rg = hub.id.split("/resourceGroups/")[1].split("/")[0] if hub.id else ""
+        rg = utils.extract_resource_group(hub.id)
         wan_id = getattr(getattr(hub, "virtual_wan", None), "id", "") or ""
         tags = hub.tags or {}
         hub_rows.append({

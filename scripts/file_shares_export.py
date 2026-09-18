@@ -21,8 +21,21 @@ log = utils.get_logger()
 
 def _iter_accounts(client):
     for acct in client.storage_accounts.list():
-        rg = acct.id.split("/resourceGroups/")[1].split("/")[0] if acct.id else ""
-        yield rg, acct.name
+        yield utils.extract_resource_group(acct.id), acct.name
+
+
+def _build_row(share, account: str, rg: str) -> dict:
+    return {
+        "Storage Account": account,
+        "Share Name": share.name,
+        "Resource Group": rg,
+        "Access Tier": utils.s(share.access_tier),
+        "Quota GB": share.share_quota if share.share_quota is not None else "",
+        "Enabled Protocols": utils.s(share.enabled_protocols),
+        "Root Squash": utils.s(share.root_squash),
+        "Lease State": utils.s(share.lease_state),
+        "Lease Status": utils.s(share.lease_status),
+    }
 
 
 def main(subscription_id: str, subscription_name: str) -> None:
@@ -37,18 +50,8 @@ def main(subscription_id: str, subscription_name: str) -> None:
     unsupported_accounts = 0
     for rg, account in _iter_accounts(client):
         try:
-            for s in client.file_shares.list(rg, account):
-                enabled_protocols = getattr(s, "enabled_protocols", "") or ""
-                rows.append({
-                    "Storage Account": account,
-                    "Share Name": s.name,
-                    "Resource Group": rg,
-                    "Access Tier": utils.s(getattr(s, "access_tier", None)) if getattr(s, "access_tier", None) else "",
-                    "Quota GB": getattr(s, "share_quota", "") if getattr(s, "share_quota", None) is not None else "",
-                    "Used Capacity (bytes)": getattr(s, "share_usage_bytes", "") if getattr(s, "share_usage_bytes", None) is not None else "",
-                    "Enabled Protocols": str(enabled_protocols),
-                    "Provisioning State": utils.s(getattr(s, "provisioning_state", None)) if getattr(s, "provisioning_state", None) else "",
-                })
+            for share in client.file_shares.list(rg, account):
+                rows.append(_build_row(share, account, rg))
         except HttpResponseError as e:
             if getattr(e, "error", None) and getattr(e.error, "code", "") == "FeatureNotSupportedForAccount":
                 unsupported_accounts += 1

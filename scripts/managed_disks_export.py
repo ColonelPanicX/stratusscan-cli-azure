@@ -25,22 +25,46 @@ def collect_disks(subscription_id: str) -> list:
 
 
 def _encryption_type(disk) -> str:
-    try:
-        enc = disk.encryption
-        if enc and enc.type:
-            return utils.s(enc.type)
-    except Exception:
-        pass
-    return "PlatformManagedKey"
+    enc = disk.encryption
+    return utils.s(enc.type) if enc else ""
+
+
+def _disk_encryption_set(disk) -> str:
+    enc = disk.encryption
+    des_id = enc.disk_encryption_set_id if enc else None
+    return des_id.split("/")[-1] if des_id else ""
 
 
 def _attached_vm(disk) -> str:
-    try:
-        if disk.managed_by:
-            return disk.managed_by.split("/")[-1]
-    except Exception:
-        pass
-    return ""
+    return disk.managed_by.split("/")[-1] if disk.managed_by else ""
+
+
+def _orphaned(disk) -> str:
+    state = utils.s(disk.disk_state)
+    if state:
+        return "Yes" if state.lower() == "unattached" else "No"
+    return "Yes" if not disk.managed_by else "No"
+
+
+def _build_row(disk) -> dict:
+    tags = disk.tags or {}
+    return {
+        "Name": disk.name,
+        "Resource Group": utils.extract_resource_group(disk.id),
+        "Location": disk.location,
+        "Size (GiB)": disk.disk_size_gb if disk.disk_size_gb is not None else "",
+        "SKU": utils.s(disk.sku.name) if disk.sku else "",
+        "OS Type": utils.s(disk.os_type) if disk.os_type else "Data",
+        "State": utils.s(disk.disk_state),
+        "Encryption": _encryption_type(disk),
+        "Attached VM": _attached_vm(disk),
+        "Orphaned": _orphaned(disk),
+        "Zones": ", ".join(disk.zones) if disk.zones else "",
+        "Tags": "; ".join(f"{k}={v}" for k, v in tags.items()),
+        "Disk Encryption Set": _disk_encryption_set(disk),
+        "Network Access Policy": utils.s(disk.network_access_policy),
+        "Public Network Access": utils.s(disk.public_network_access),
+    }
 
 
 def main(subscription_id: str, subscription_name: str) -> None:
@@ -53,24 +77,7 @@ def main(subscription_id: str, subscription_name: str) -> None:
         print("No managed disks found.")
         return
 
-    rows = []
-    for disk in disks:
-        rg = utils.extract_resource_group(disk.id)
-        tags = disk.tags or {}
-        rows.append({
-            "Name": disk.name,
-            "Resource Group": rg,
-            "Location": disk.location,
-            "Size (GiB)": disk.disk_size_gb or "",
-            "SKU": disk.sku.name if disk.sku else "",
-            "OS Type": utils.s(disk.os_type) if disk.os_type else "Data",
-            "State": utils.s(disk.disk_state),
-            "Encryption": _encryption_type(disk),
-            "Attached VM": _attached_vm(disk),
-            "Orphaned": "Yes" if not disk.managed_by else "No",
-            "Zones": ", ".join(disk.zones) if disk.zones else "",
-            "Tags": "; ".join(f"{k}={v}" for k, v in tags.items()),
-        })
+    rows = [_build_row(disk) for disk in disks]
 
     df = pd.DataFrame(rows)
     filename = utils.create_export_filename(subscription_name, "managed-disks", "all")

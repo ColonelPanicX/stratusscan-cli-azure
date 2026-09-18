@@ -18,31 +18,39 @@ utils.log_script_start("subnets_export.py", "Azure Subnets Export")
 log = utils.get_logger()
 
 
+def _name_of(sub_resource) -> str:
+    return sub_resource.id.split("/")[-1] if sub_resource and sub_resource.id else ""
+
+
+def _address_prefix(subnet) -> str:
+    return subnet.address_prefix or ", ".join(subnet.address_prefixes or [])
+
+
+def _build_row(vnet, subnet) -> dict:
+    nsg_name = _name_of(subnet.network_security_group)
+    delegations = [d.service_name for d in (subnet.delegations or []) if d.service_name]
+    return {
+        "VNet Name": vnet.name,
+        "VNet Resource Group": utils.extract_resource_group(vnet.id),
+        "Subnet Name": subnet.name,
+        "Address Prefix": _address_prefix(subnet),
+        "NSG": nsg_name,
+        "Route Table": _name_of(subnet.route_table),
+        "Provisioning State": utils.s(subnet.provisioning_state),
+        "Location": vnet.location,
+        "No NSG": not nsg_name,
+        "NAT Gateway": _name_of(subnet.nat_gateway),
+        "Delegations": ", ".join(delegations),
+        "Service Endpoint Count": len(subnet.service_endpoints or []),
+        "Default Outbound Access": "" if subnet.default_outbound_access is None else subnet.default_outbound_access,
+    }
+
+
 def collect_subnets(subscription_id: str) -> list:
     client = utils.get_azure_client("network", subscription_id)
     vnets = list(client.virtual_networks.list_all())
     log.info("Scanning subnets across %d VNets", len(vnets))
-    rows = []
-    for vnet in vnets:
-        vnet_rg = utils.extract_resource_group(vnet.id)
-        for subnet in (vnet.subnets or []):
-            nsg_name = ""
-            if subnet.network_security_group and subnet.network_security_group.id:
-                nsg_name = subnet.network_security_group.id.split("/")[-1]
-            route_table = ""
-            if subnet.route_table and subnet.route_table.id:
-                route_table = subnet.route_table.id.split("/")[-1]
-            rows.append({
-                "VNet Name": vnet.name,
-                "VNet Resource Group": vnet_rg,
-                "Subnet Name": subnet.name,
-                "Address Prefix": subnet.address_prefix or "",
-                "NSG": nsg_name,
-                "Route Table": route_table,
-                "Provisioning State": subnet.provisioning_state or "",
-                "Location": vnet.location,
-            })
-    return rows
+    return [_build_row(vnet, subnet) for vnet in vnets for subnet in (vnet.subnets or [])]
 
 
 def main(subscription_id: str, subscription_name: str) -> None:

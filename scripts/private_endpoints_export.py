@@ -24,16 +24,16 @@ def collect_private_endpoints(subscription_id: str) -> list:
     return list(client.private_endpoints.list_by_subscription())
 
 
-def _connections(pe):
-    conns = getattr(pe, "private_link_service_connections", None) or []
-    conns += getattr(pe, "manual_private_link_service_connections", None) or []
-    return conns
+def _connections(pe) -> list:
+    return list(pe.private_link_service_connections or []) + list(
+        pe.manual_private_link_service_connections or []
+    )
 
 
 def _target_resource(pe) -> str:
     names = []
     for c in _connections(pe):
-        svc_id = getattr(c, "private_link_service_id", "") or ""
+        svc_id = c.private_link_service_id or ""
         if svc_id:
             names.append(svc_id.split("/")[-1])
     return ", ".join(names)
@@ -42,26 +42,21 @@ def _target_resource(pe) -> str:
 def _target_subresource(pe) -> str:
     groups = []
     for c in _connections(pe):
-        groups.extend(getattr(c, "group_ids", None) or [])
+        groups.extend(c.group_ids or [])
     return ", ".join(groups)
 
 
 def _connection_status(pe) -> str:
     statuses = []
     for c in _connections(pe):
-        state = getattr(c, "private_link_service_connection_state", None)
-        if state and getattr(state, "status", None):
-            statuses.append(state.status)
+        state = c.private_link_service_connection_state
+        if state and state.status:
+            statuses.append(utils.s(state.status))
     return ", ".join(statuses)
 
 
 def _custom_dns(pe) -> str:
-    fqdns = []
-    for cfg in getattr(pe, "custom_dns_configs", None) or []:
-        fqdn = getattr(cfg, "fqdn", "") or ""
-        if fqdn:
-            fqdns.append(fqdn)
-    return ", ".join(fqdns)
+    return ", ".join(cfg.fqdn for cfg in (pe.custom_dns_configs or []) if cfg.fqdn)
 
 
 def main(subscription_id: str, subscription_name: str) -> None:
@@ -76,19 +71,17 @@ def main(subscription_id: str, subscription_name: str) -> None:
 
     rows = []
     for pe in endpoints:
-        rg = pe.id.split("/resourceGroups/")[1].split("/")[0] if pe.id else ""
-        subnet_id = getattr(getattr(pe, "subnet", None), "id", "") or ""
-        subnet = subnet_id.split("/")[-1] if subnet_id else ""
+        subnet_id = pe.subnet.id if pe.subnet and pe.subnet.id else ""
         tags = pe.tags or {}
         rows.append({
             "Name": pe.name,
-            "Resource Group": rg,
+            "Resource Group": utils.extract_resource_group(pe.id),
             "Location": pe.location,
-            "Subnet": subnet,
+            "Subnet": subnet_id.split("/")[-1] if subnet_id else "",
             "Target Resource": _target_resource(pe),
             "Target Sub-Resource": _target_subresource(pe),
             "Connection Status": _connection_status(pe),
-            "Provisioning State": pe.provisioning_state or "",
+            "Provisioning State": utils.s(pe.provisioning_state),
             "Custom DNS Configs": _custom_dns(pe),
             "Tags": "; ".join(f"{k}={v}" for k, v in tags.items()),
         })

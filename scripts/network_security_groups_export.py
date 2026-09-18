@@ -17,6 +17,10 @@ utils.log_script_start("network_security_groups_export.py", "Azure NSG Export")
 
 log = utils.get_logger()
 
+_ANY_SOURCES = {"*", "0.0.0.0/0", "::/0", "internet"}
+_MGMT_PORTS = (22, 3389)
+_PORTLESS_PROTOCOLS = {"icmp", "esp", "ah"}
+
 
 def collect_nsgs(subscription_id: str) -> list:
     client = utils.get_azure_client("network", subscription_id)
@@ -34,6 +38,50 @@ def _values(singular, plural) -> str:
     if plural:
         return _join(plural)
     return utils.s(singular)
+
+
+def _asg_names(groups) -> str:
+    return ", ".join(g.id.split("/")[-1] for g in (groups or []) if g.id)
+
+
+def _port_ranges(singular, plural) -> list:
+    ranges = list(plural) if plural else ([singular] if singular else [])
+    return [utils.s(r) for r in ranges]
+
+
+def _port_in_ranges(port: int, ranges: list) -> bool:
+    for item in ranges:
+        item = item.strip()
+        if item == "*":
+            return True
+        low, _, high = item.partition("-")
+        try:
+            if high:
+                if int(low) <= port <= int(high):
+                    return True
+            elif int(low) == port:
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+def is_any_source_inbound_allow(rule) -> bool:
+    if utils.s(rule.direction).lower() != "inbound" or utils.s(rule.access).lower() != "allow":
+        return False
+    sources = list(rule.source_address_prefixes or [])
+    if rule.source_address_prefix:
+        sources.append(rule.source_address_prefix)
+    return any(utils.s(src).strip().lower() in _ANY_SOURCES for src in sources)
+
+
+def exposes_mgmt_ports(rule) -> bool:
+    if not is_any_source_inbound_allow(rule):
+        return False
+    if utils.s(rule.protocol).lower() in _PORTLESS_PROTOCOLS:
+        return False
+    ranges = _port_ranges(rule.destination_port_range, rule.destination_port_ranges)
+    return any(_port_in_ranges(port, ranges) for port in _MGMT_PORTS)
 
 
 def _flatten_rules(nsg) -> list:
@@ -66,6 +114,10 @@ def _flatten_rules(nsg) -> list:
                     rule.destination_address_prefix, rule.destination_address_prefixes
                 ),
                 "Description": rule.description or "",
+                "Source ASGs": _asg_names(rule.source_application_security_groups),
+                "Destination ASGs": _asg_names(rule.destination_application_security_groups),
+                "Any-Source Inbound Allow": is_any_source_inbound_allow(rule),
+                "Mgmt Ports Exposed": exposes_mgmt_ports(rule),
             })
     return rows
 
@@ -85,13 +137,15 @@ def main(subscription_id: str, subscription_name: str) -> None:
     for nsg in nsgs:
         rg = utils.extract_resource_group(nsg.id)
         tags = nsg.tags or {}
+        custom_rules = nsg.security_rules or []
+        all_rules = list(custom_rules) + list(nsg.default_security_rules or [])
         default_inbound = len(nsg.default_security_rules or [])
         inbound_rules = sum(
-            1 for r in (nsg.security_rules or [])
+            1 for r in custom_rules
             if utils.s(r.direction).lower() == "inbound"
         )
         outbound_rules = sum(
-            1 for r in (nsg.security_rules or [])
+            1 for r in custom_rules
             if utils.s(r.direction).lower() == "outbound"
         )
         associated_subnets = len(nsg.subnets or [])
@@ -105,8 +159,11 @@ def main(subscription_id: str, subscription_name: str) -> None:
             "Default Rules": default_inbound,
             "Associated Subnets": associated_subnets,
             "Associated NICs": associated_nics,
-            "Provisioning State": nsg.provisioning_state or "",
+            "Provisioning State": utils.s(nsg.provisioning_state),
             "Tags": "; ".join(f"{k}={v}" for k, v in tags.items()),
+            "Any-Source Inbound Allow": any(is_any_source_inbound_allow(r) for r in all_rules),
+            "Mgmt Ports Exposed": any(exposes_mgmt_ports(r) for r in all_rules),
+            "Unattached": associated_subnets == 0 and associated_nics == 0,
         })
         rule_rows.extend(_flatten_rules(nsg))
 
