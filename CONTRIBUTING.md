@@ -190,7 +190,7 @@ Per-parent loops (containers per storage account, databases per server, …) cat
 - **Never `str()` an SDK attribute.** Use `utils.s(value)` — hybrid SDK models return Enum members, and `str()` renders them as `DiskState.ATTACHED`. Use `utils.extract_resource_group(id)` rather than splitting on `"/resourceGroups/"`, whose casing varies.
 - **Never assert a value you did not read.** A column with no data is blank, never a plausible-looking default.
 - **Always guard with `is_service_available_in_environment()`** — some services aren't available in Azure US Government.
-- **No `print()` in `utils.py`.** Only exporter scripts and CLI scripts print to console. `utils.py` returns structured data only.
+- **No `print()` or `input()` in `utils.py`.** Exporters and `runner.py` print; menus and prompts live in `cli_ui.py`. `utils.py` returns structured data only, and a test enforces it.
 - **Azure `.list()` methods return lazy iterators** — wrap in `list()` to materialize, or iterate directly for large sets.
 - **Tags always go last** in the column order.
 - **Script filenames:** `lowercase_underscored.py`

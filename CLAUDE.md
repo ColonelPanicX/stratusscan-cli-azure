@@ -24,9 +24,8 @@ Exporters in `scripts/` are fully independent — they can also run directly.
 
 ### 3. No print() in utils.py
 `utils.py` is a shared library. It must not emit console output. Return structured data.
-Console output belongs in `stratusscan.py`, `configure.py`, `runner.py` and the exporter scripts.
-Known exception: `utils.prompt_menu` still prints and reads input — it moves to a CLI-UI module
-under SSAZR-117. Do not add to it.
+Console output belongs in `stratusscan.py`, `configure.py`, `runner.py`, `cli_ui.py` and the
+exporter scripts. `utils.py` contains no `print()` and no `input()` — a test asserts it.
 
 ### 3a. Importing must have no side effects
 Importing any module must not install packages, write files, or call Azure.
@@ -57,6 +56,7 @@ raise the cap, run `tests/test_sdk_contract.py` against it, then the full suite 
 stratusscan.py            # main menu + Run All — launches exporters as subprocesses, writes the run report
 configure.py              # optional subscription/environment wizard (zero-config is the default path)
 runner.py                 # exporter console adapter — flags, exit codes, run manifest (may print)
+cli_ui.py                 # menus, prompts, status panel — the only input() in the project
 utils.py                  # shared library — print-free
 bootstrap.py              # stdlib-only dependency installer, called from main()
 config-template.json      # shipped config shape; config.json itself is untracked
@@ -240,7 +240,9 @@ Azure SDK `.list()` methods return lazy iterators — wrap in `list()` to materi
 | `save_config(data)` / `reload_config()` | Write `config.json` / drop the cached copy |
 | `get_subscription_name(sub_id)` / `get_version()` | Display helpers |
 | `AzureAccessError` | Raised when Azure refuses or cannot be reached; carries the SDK error as `__cause__` plus a `.hint` |
-| `prompt_menu(...)` | Interactive menu (moving out of `utils.py` — see constraint #3) |
+| `output_dir()` | Resolved output directory — `--output-dir` / `STRATUSSCAN_OUTPUT_DIR` / config / `output/` |
+| `is_subscription_id(value)` | GUID shape check for user-supplied subscription IDs |
+| `set_console_level(level)` | Backs `--verbose` |
 
 ---
 

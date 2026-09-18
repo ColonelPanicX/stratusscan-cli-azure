@@ -162,6 +162,46 @@ Pick a tier — **Tier 1** (core infrastructure), **Tier 2** (workloads), **Gove
 
 When multiple subscriptions are accessible, **Run All** scans a single subscription by default (the configured default, otherwise the first) to stay within the Cloud Shell session timeout. Choosing Run All prompts for scope, where scanning every subscription is an explicit opt-in. Running an individual exporter still fans out across all accessible subscriptions.
 
+### Command-line flags
+
+`python stratusscan.py` with no flags opens the menu. Flags run the same code path
+non-interactively — same run id, manifest, run report, zip and exit codes.
+
+| Flag | Meaning |
+|---|---|
+| `--list` | Print the tiers and exporter names, then exit (no Azure calls) |
+| `--dry-run` | Validate credentials and print the targets, then exit without exporting |
+| `--run-all` | Every exporter |
+| `--tier {tier1,tier2,governance,monitoring}` | One tier; repeatable |
+| `--exporter NAME` | One exporter by script name (`storage_accounts`) or menu label; repeatable |
+| `--subscriptions ID[,ID…]｜all` | Target subscriptions (default: the default subscription) |
+| `--no-zip` | Skip packaging this run |
+| `--timeout SECONDS` | Per-exporter timeout (default 1800) |
+| `--verbose` | Log at INFO on the console |
+| `--version` | Print the version and exit |
+
+```bash
+python stratusscan.py --tier governance --subscriptions all
+python stratusscan.py --exporter storage_accounts --exporter key_vault --no-zip
+python stratusscan.py --dry-run
+```
+
+Every exporter takes `--subscription-id`, `--subscription-name`, `--output-dir`,
+`--verbose` and `--help`:
+
+```bash
+python scripts/virtual_machines_export.py --subscription-id <guid> --output-dir /tmp/audit
+```
+
+`configure.py` is scriptable too: `--environment`, `--subscriptions`, `--default`,
+`--validate` (list what the credential can see), `--show` (print the current config).
+
+Precedence everywhere is **flags → environment variables → `config.json`**.
+
+### Menu navigation
+
+`b` goes back one level, `x` returns to the main menu, `q` quits. Ctrl-C quits cleanly.
+
 ### Direct script execution
 
 Every exporter can run standalone:
