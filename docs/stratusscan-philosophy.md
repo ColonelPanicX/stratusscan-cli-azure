@@ -39,7 +39,7 @@ The install path is `pip install` in a fresh cloud shell session with zero extra
 
 StratusScan never writes, modifies, deletes, or provisions cloud resources. Every exporter must fail gracefully on permission denied — skip and log, never crash. IAM/RBAC policies live in `policies/`.
 
-Runtime dependencies: CSP SDK, `pandas`, `openpyxl`, `python-dateutil`, `questionary`. No build tools, no compiled extensions, no running services.
+Runtime dependencies: CSP SDK, `pandas`, `openpyxl`. No build tools, no compiled extensions, no running services.
 
 Dev dependencies (`pytest`, `ruff`, `black`, `mypy`, mocking libraries) install only via `[dev]` extras.
 
