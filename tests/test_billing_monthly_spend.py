@@ -332,3 +332,22 @@ def test_scope_subscriptions_round_trip_and_ignore_garbage(monkeypatch):
     assert utils.get_scope_subscriptions("x", "X") == pairs
     monkeypatch.setenv(utils.SCOPE_SUBSCRIPTIONS_ENV, "not json")
     assert utils.get_scope_subscriptions("x", "X") == [("x", "X")]
+
+
+def test_rows_without_a_usable_usage_date_are_skipped_loudly(caplog):
+    client = _FakeCostClient({"/subscriptions/s1": SimpleNamespace(
+        columns=[SimpleNamespace(name="PreTaxCost"), SimpleNamespace(name="Currency")],
+        rows=[[5.0, "USD"]], next_link=None,
+    )})
+
+    with caplog.at_level("WARNING"):
+        spend, _ = billing.collect_subscription_spend(client, "s1", ["202608"])
+
+    assert spend == {}
+    assert "no usable UsageDate" in caplog.text and "PreTaxCost" in caplog.text
+
+
+def test_no_data_prints_what_to_check_before_exiting_empty(run_main, capsys):
+    with pytest.raises(utils.NoResourcesFound):
+        run_main({"/subscriptions/a": _result([])}, [("a", "Alpha")])
+    assert "Cost Management Reader" in capsys.readouterr().out

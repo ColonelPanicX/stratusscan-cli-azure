@@ -60,6 +60,12 @@ CHANGE_FORMAT = r"\+0.0%;\-0.0%"
 
 MonthKey = str  # YYYYMM
 
+NO_DATA_HINT = (
+    "Cost Management returned no cost rows for any subscription in scope. Check that the signed-in identity "
+    "has Cost Management Reader on the subscription, that Cost Analysis shows spend for it in the portal, "
+    "and see logs/ for the per-query row counts."
+)
+
 
 def month_window(today: datetime.date, count: int = MONTHS_BACK) -> list[MonthKey]:
     """The `count` complete months ending with the month before today's, oldest first."""
@@ -115,16 +121,21 @@ def _post_next_page(client, next_link: str, body: dict):
     return QueryResult(response.json())
 
 
-def _accumulate(result, spend: dict[MonthKey, float], currencies: set[str]) -> None:
+def _accumulate(result, spend: dict[MonthKey, float], currencies: set[str]) -> tuple[int, int]:
+    """Fold one result page into spend; return (rows seen, rows skipped for lacking a usable UsageDate)."""
     columns = [getattr(c, "name", "") for c in (result.columns or [])]
+    seen = skipped = 0
     for raw in result.rows or []:
+        seen += 1
         row = dict(zip(columns, raw, strict=False))
         month = _usage_month(row.get("UsageDate"))
         if not month:
+            skipped += 1
             continue
         spend[month] = spend.get(month, 0.0) + float(row.get("PreTaxCost") or row.get("Cost") or 0.0)
         if row.get("Currency"):
             currencies.add(str(row["Currency"]))
+    return seen, skipped
 
 
 def collect_subscription_spend(
@@ -138,8 +149,17 @@ def collect_subscription_spend(
         result = cost_management_export.call_with_throttle_retry(
             lambda body=body: client.query.usage(scope=scope, parameters=body), "query.usage"
         )
+        if result is None:
+            log.info("%s %s..%s: Cost Management answered 204 (no rows)", scope, window[0], window[-1])
         while result is not None:
-            _accumulate(result, spend, currencies)
+            seen, skipped = _accumulate(result, spend, currencies)
+            columns = [getattr(c, "name", "") for c in (result.columns or [])]
+            log.info("%s %s..%s: %d row(s), columns %s", scope, window[0], window[-1], seen, columns)
+            if skipped:
+                log.warning(
+                    "%s: %d of %d row(s) had no usable UsageDate and were skipped; columns were %s",
+                    scope, skipped, seen, columns,
+                )
             if not result.next_link:
                 break
             next_link = result.next_link
@@ -388,6 +408,7 @@ def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     errors: list = []
     rows, currencies = collect_spend(subscriptions, months, errors)
     if not any(spend for _, spend in rows):
+        print(NO_DATA_HINT)
         if errors:
             raise utils.NoResourcesFound("billing data for the subscriptions that could be queried")
         raise utils.NoResourcesFound("billing data")
