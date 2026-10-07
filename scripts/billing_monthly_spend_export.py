@@ -122,13 +122,13 @@ def _post_next_page(client, next_link: str, body: dict):
 
 
 def _accumulate(result, spend: dict[MonthKey, float], currencies: set[str]) -> tuple[int, int]:
-    """Fold one result page into spend; return (rows seen, rows skipped for lacking a usable UsageDate)."""
+    """Fold one result page into spend; return (rows seen, rows skipped for lacking a usable month column)."""
     columns = [getattr(c, "name", "") for c in (result.columns or [])]
     seen = skipped = 0
     for raw in result.rows or []:
         seen += 1
         row = dict(zip(columns, raw, strict=False))
-        month = _usage_month(row.get("UsageDate"))
+        month = _usage_month(row.get("UsageDate") or row.get("BillingMonth"))
         if not month:
             skipped += 1
             continue
@@ -163,7 +163,7 @@ def collect_subscription_spend(
             )
             if skipped:
                 log.warning(
-                    "%s: %d of %d row(s) had no usable UsageDate and were skipped; columns were %s",
+                    "%s: %d of %d row(s) had no usable UsageDate/BillingMonth and were skipped; columns were %s",
                     scope, skipped, seen, columns,
                 )
             if not result.next_link:

@@ -344,7 +344,7 @@ def test_rows_without_a_usable_usage_date_are_skipped_loudly(caplog):
         spend, _ = billing.collect_subscription_spend(client, "s1", ["202608"])
 
     assert spend == {}
-    assert "no usable UsageDate" in caplog.text and "PreTaxCost" in caplog.text
+    assert "no usable UsageDate/BillingMonth" in caplog.text and "PreTaxCost" in caplog.text
 
 
 def test_no_data_prints_what_to_check_before_exiting_empty(run_main, capsys):
@@ -359,3 +359,17 @@ def test_empty_result_prints_what_each_query_returned(run_main, capsys):
     out = capsys.readouterr().out
     assert "a 202508..202602" in out
     assert "0 row(s)" in out and "PreTaxCost" in out
+
+
+def test_billing_month_column_is_read_when_azure_names_it_instead_of_usage_date():
+    result = SimpleNamespace(
+        columns=[SimpleNamespace(name=n) for n in ("PreTaxCost", "BillingMonth", "Currency")],
+        rows=[[7.0, "2026-08-01T00:00:00", "USD"], [1.5, "2026-08-01T00:00:00", "USD"], [2.0, "2026-07-01T00:00:00", "USD"]],
+        next_link=None,
+    )
+    client = _FakeCostClient({"/subscriptions/s1": result})
+
+    spend, currencies = billing.collect_subscription_spend(client, "s1", ["202607", "202608"])
+
+    assert spend == {"202608": 8.5, "202607": 2.0}
+    assert currencies == {"USD"}
