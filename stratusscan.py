@@ -124,6 +124,7 @@ GOVERNANCE_EXPORTERS = [
     ("RBAC Role Definitions",          "role_definitions_export.py"),
     ("Managed Identities",             "managed_identities_export.py"),
     ("Cost Management (Month-to-Date)", "cost_management_export.py"),
+    ("Billing Monthly Spend (13 months)", "billing_monthly_spend_export.py"),
 ]
 
 MONITORING_EXPORTERS = [
@@ -153,6 +154,7 @@ ALL_EXPORTERS = (
 TENANT_SCOPED_EXPORTERS = frozenset({
     "subscriptions_export.py",
     "management_groups_export.py",
+    "billing_monthly_spend_export.py",
 })
 
 # Tier 2 is 46 exporters; the submenu groups them so the list can be scanned.
@@ -380,7 +382,9 @@ def status_for_exit_code(rc: int) -> str:
     return STATUS_BY_EXIT_CODE.get(rc, STATUS_FAILED)
 
 
-def _run_exporter(script_rel_path: str, sub_id: str, sub_name: str, run_id: str) -> tuple:
+def _run_exporter(
+    script_rel_path: str, sub_id: str, sub_name: str, run_id: str, scope_subs: list | None = None
+) -> tuple:
     """Run one exporter subprocess; return (status, exit_code, duration_s)."""
     script_path = SCRIPTS_DIR / script_rel_path
     if not script_path.exists():
@@ -391,6 +395,9 @@ def _run_exporter(script_rel_path: str, sub_id: str, sub_name: str, run_id: str)
     env["STRATUSSCAN_SUBSCRIPTION_ID"] = sub_id
     env["STRATUSSCAN_SUBSCRIPTION_NAME"] = sub_name
     env["STRATUSSCAN_RUN_ID"] = run_id
+    env[utils.SCOPE_SUBSCRIPTIONS_ENV] = utils.encode_scope_subscriptions(
+        scope_subs or [(sub_id, sub_name)]
+    )
 
     started = time.monotonic()
     try:
@@ -453,10 +460,13 @@ def _outcome_line(status: str, rc: int | None, duration: float, record: dict) ->
     return f"FAILED (exit {rc})"
 
 
-def _launch(label: str, path: str, sub_id: str, sub_name: str, run_id: str, outcomes: list) -> str:
+def _launch(
+    label: str, path: str, sub_id: str, sub_name: str, run_id: str, outcomes: list,
+    scope_subs: list | None = None,
+) -> str:
     """Run one exporter, print its outcome line, append to outcomes; return the status."""
     print(f"  → {label}...", end=" ", flush=True)
-    status, rc, duration = _run_exporter(path, sub_id, sub_name, run_id)
+    status, rc, duration = _run_exporter(path, sub_id, sub_name, run_id, scope_subs)
     record = _manifest_record(run_id, path, sub_id)
     if status == STATUS_OK and record.get("status") == STATUS_SKIPPED:
         status = STATUS_SKIPPED
@@ -558,8 +568,12 @@ def _run_exporter_across(path: str, label: str, subs: list) -> list:
     run_id = new_run_id()
     outcomes: list = []
     try:
-        for sub_id, sub_name in subs:
-            _launch(f"{label} [{sub_name}]" if len(subs) > 1 else label, path, sub_id, sub_name, run_id, outcomes)
+        targets = subs[:1] if path in TENANT_SCOPED_EXPORTERS else subs
+        for sub_id, sub_name in targets:
+            _launch(
+                f"{label} [{sub_name}]" if len(targets) > 1 else label,
+                path, sub_id, sub_name, run_id, outcomes, scope_subs=subs,
+            )
     except KeyboardInterrupt:
         print("\nInterrupted.")
         _print_status_summary(outcomes)
@@ -629,7 +643,7 @@ def _run_all_exporters(
                     if path in tenant_done:
                         continue
                     tenant_done.add(path)
-                _launch(exporter_label, path, sub_id, sub_name, run_id, outcomes)
+                _launch(exporter_label, path, sub_id, sub_name, run_id, outcomes, scope_subs=subs)
             if len(subs) > 1:
                 print()
     except KeyboardInterrupt:

@@ -164,6 +164,32 @@ def get_auto_subscriptions() -> list[str]:
     return [s.strip() for s in raw.split(",") if s.strip()]
 
 
+SCOPE_SUBSCRIPTIONS_ENV = "STRATUSSCAN_SCOPE_SUBSCRIPTIONS"
+
+
+def encode_scope_subscriptions(subscriptions: list[tuple[str, str]]) -> str:
+    return json.dumps([{"id": sub_id, "name": sub_name} for sub_id, sub_name in subscriptions])
+
+
+def get_scope_subscriptions(sub_id: str, sub_name: str) -> list[tuple[str, str]]:
+    """
+    Every (id, name) subscription the orchestrator is scanning in this run, for
+    exporters that cover the whole scope in one pass. Falls back to the single
+    targeted subscription when the exporter is run directly.
+    """
+    raw = os.environ.get(SCOPE_SUBSCRIPTIONS_ENV, "").strip()
+    try:
+        entries = json.loads(raw) if raw else []
+    except ValueError:
+        entries = []
+    pairs = [
+        (str(e["id"]), str(e.get("name") or e["id"]))
+        for e in entries
+        if isinstance(e, dict) and e.get("id")
+    ]
+    return pairs or [(sub_id, sub_name)]
+
+
 # ---------------------------------------------------------------------------
 # Timestamp & filename helpers
 # ---------------------------------------------------------------------------

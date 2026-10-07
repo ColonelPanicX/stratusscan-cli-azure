@@ -60,7 +60,7 @@ cli_ui.py                 # menus, prompts, status panel — the only input() in
 utils.py                  # shared library — print-free
 bootstrap.py              # stdlib-only dependency installer, called from main()
 config-template.json      # shipped config shape; config.json itself is untracked
-scripts/                  # all 80 exporters — flat directory, no subdirs
+scripts/                  # all 81 exporters — flat directory, no subdirs
   # Tier 1 (13)
   subscriptions_export.py
   resource_groups_export.py
@@ -122,7 +122,7 @@ scripts/                  # all 80 exporters — flat directory, no subdirs
   batch_accounts_export.py
   recovery_services_vaults_export.py
   backup_items_export.py
-  # Governance (14)
+  # Governance (15)
   policy_assignments_export.py
   management_groups_export.py
   defender_scores_export.py
@@ -137,6 +137,7 @@ scripts/                  # all 80 exporters — flat directory, no subdirs
   role_definitions_export.py
   managed_identities_export.py
   cost_management_export.py
+  billing_monthly_spend_export.py   # tenant-scoped: one tracker workbook across all scanned subscriptions
   # Monitoring (7)
   metric_alerts_export.py
   action_groups_export.py
@@ -241,6 +242,7 @@ Azure SDK `.list()` methods return lazy iterators — wrap in `list()` to materi
 | `get_config()` | Thread-safe config.json singleton |
 | `is_auto_run()` | CI mode check |
 | `get_auto_subscriptions()` | Reads STRATUSSCAN_SUBSCRIPTIONS env var |
+| `get_scope_subscriptions(id, name)` | Every subscription the orchestrator is scanning, for `TENANT_SCOPED_EXPORTERS` that cover the whole scope in one run; the targeted subscription alone when run directly |
 | `list_subscriptions()` | Lists all accessible subscriptions; raises `AzureAccessError` on auth/HTTP failure — an empty list always means zero subscriptions |
 | `resolve_target_subscription()` | `(id, name)` from the env vars the orchestrator injects, else the config default |
 | `extract_resource_group(resource_id)` | Case-insensitive; never split on `"/resourceGroups/"` yourself |
@@ -282,7 +284,7 @@ All files land in `output/`.
 
 | Version | Scope |
 |---|---|
-| v0.1.0 (current) | 80 exporters, Public + Government environments, subscription selector |
+| v0.1.0 (current) | 81 exporters, Public + Government environments, subscription selector |
 | v0.2.0 | Resource Graph Smart Scan, Entra ID exporters (Graph SDK), pricing data |
 | v0.3.0+ | Multi-tenant scanning, Textual TUI |
 

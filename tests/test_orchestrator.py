@@ -293,3 +293,33 @@ def test_status_panel_reports_version_environment_and_config_source(monkeypatch,
     assert "AzurePublicCloud" in out or "AzureUSGovernment" in out
     assert "Sub One" in out
     assert "Python" in out
+
+
+def test_exporters_receive_every_subscription_in_scope(monkeypatch, manifest):
+    fake = _fake_run([0], manifest)
+    monkeypatch.setattr(subprocess, "run", fake)
+    subs = [("sub-1", "Sub One"), ("sub-2", "Sub Two")]
+
+    stratusscan._run_exporter(_EXPORTER, "sub-1", "Sub One", "run-A", scope_subs=subs)
+
+    scope = json.loads(fake.calls[0]["env"][utils.SCOPE_SUBSCRIPTIONS_ENV])
+    assert scope == [{"id": "sub-1", "name": "Sub One"}, {"id": "sub-2", "name": "Sub Two"}]
+
+
+def test_a_single_exporter_menu_run_covers_all_subscriptions_once_when_tenant_scoped(monkeypatch, manifest):
+    fake = _fake_run([0, 0, 0], manifest)
+    monkeypatch.setattr(subprocess, "run", fake)
+    subs = [("sub-1", "Sub One"), ("sub-2", "Sub Two")]
+
+    billing = stratusscan._run_exporter_across("billing_monthly_spend_export.py", "Billing", subs)
+    assert len(billing) == 1
+    scope = json.loads(fake.calls[0]["env"][utils.SCOPE_SUBSCRIPTIONS_ENV])
+    assert [s["id"] for s in scope] == ["sub-1", "sub-2"]
+
+    per_subscription = stratusscan._run_exporter_across(_EXPORTER, "Storage", subs)
+    assert len(per_subscription) == 2
+
+
+def test_billing_exporter_is_registered_and_tenant_scoped():
+    assert ("Billing Monthly Spend (13 months)", "billing_monthly_spend_export.py") in stratusscan.GOVERNANCE_EXPORTERS
+    assert "billing_monthly_spend_export.py" in stratusscan.TENANT_SCOPED_EXPORTERS
