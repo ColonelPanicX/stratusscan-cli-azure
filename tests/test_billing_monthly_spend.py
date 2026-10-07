@@ -351,3 +351,11 @@ def test_no_data_prints_what_to_check_before_exiting_empty(run_main, capsys):
     with pytest.raises(utils.NoResourcesFound):
         run_main({"/subscriptions/a": _result([])}, [("a", "Alpha")])
     assert "Cost Management Reader" in capsys.readouterr().out
+
+
+def test_empty_result_prints_what_each_query_returned(run_main, capsys):
+    with pytest.raises(utils.NoResourcesFound):
+        run_main({"/subscriptions/a": _result([])}, [("a", "Alpha")])
+    out = capsys.readouterr().out
+    assert "a 202508..202602" in out
+    assert "0 row(s)" in out and "PreTaxCost" in out

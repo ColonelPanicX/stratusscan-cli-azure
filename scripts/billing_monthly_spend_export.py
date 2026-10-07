@@ -139,8 +139,9 @@ def _accumulate(result, spend: dict[MonthKey, float], currencies: set[str]) -> t
 
 
 def collect_subscription_spend(
-    client, subscription_id: str, months: list[MonthKey]
+    client, subscription_id: str, months: list[MonthKey], diagnostics: list[str] | None = None
 ) -> tuple[dict[MonthKey, float], set[str]]:
+    notes = diagnostics if diagnostics is not None else []
     scope = f"/subscriptions/{subscription_id}"
     spend: dict[MonthKey, float] = {}
     currencies: set[str] = set()
@@ -151,10 +152,15 @@ def collect_subscription_spend(
         )
         if result is None:
             log.info("%s %s..%s: Cost Management answered 204 (no rows)", scope, window[0], window[-1])
+            notes.append(f"{subscription_id} {window[0]}..{window[-1]}: Azure answered 'no content' (204)")
         while result is not None:
             seen, skipped = _accumulate(result, spend, currencies)
             columns = [getattr(c, "name", "") for c in (result.columns or [])]
             log.info("%s %s..%s: %d row(s), columns %s", scope, window[0], window[-1], seen, columns)
+            notes.append(
+                f"{subscription_id} {window[0]}..{window[-1]}: {seen} row(s), "
+                f"{skipped} unusable, columns {columns}"
+            )
             if skipped:
                 log.warning(
                     "%s: %d of %d row(s) had no usable UsageDate and were skipped; columns were %s",
@@ -171,7 +177,8 @@ def collect_subscription_spend(
 
 
 def collect_spend(
-    subscriptions: list[tuple[str, str]], months: list[MonthKey], errors: list
+    subscriptions: list[tuple[str, str]], months: list[MonthKey], errors: list,
+    diagnostics: list[str] | None = None,
 ) -> tuple[list[tuple[str, dict[MonthKey, float]]], set[str]]:
     client = utils.get_azure_client("costmanagement")
     rows: list[tuple[str, dict[MonthKey, float]]] = []
@@ -180,7 +187,7 @@ def collect_spend(
     for sub_id, sub_name in subscriptions:
         log.info("Querying %d months of cost for subscription %s", len(months), sub_id)
         try:
-            spend, seen = collect_subscription_spend(client, sub_id, months)
+            spend, seen = collect_subscription_spend(client, sub_id, months, diagnostics)
         except HttpResponseError as exc:
             errors.append(utils.error_record(f"/subscriptions/{sub_id}", "query.usage", exc))
             log.warning("Cost query failed for %s: %s", sub_name, exc)
@@ -406,9 +413,13 @@ def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
     subscriptions = utils.get_scope_subscriptions(subscription_id, subscription_name)
     months = month_window(datetime.date.today())
     errors: list = []
-    rows, currencies = collect_spend(subscriptions, months, errors)
+    diagnostics: list[str] = []
+    rows, currencies = collect_spend(subscriptions, months, errors, diagnostics)
     if not any(spend for _, spend in rows):
         print(NO_DATA_HINT)
+        print(f"Queried {len(subscriptions)} subscription(s), months {months[0]}..{months[-1]}:")
+        for note in diagnostics:
+            print(f"  {note}")
         if errors:
             raise utils.NoResourcesFound("billing data for the subscriptions that could be queried")
         raise utils.NoResourcesFound("billing data")
