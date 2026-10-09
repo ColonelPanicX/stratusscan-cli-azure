@@ -41,6 +41,7 @@ def _fake_run(returncodes, manifest=None):
                 "rows": 23 if rc in (0, 4) else (0 if rc == 3 else None),
                 "errors": 3 if rc == 4 else 0,
                 "file": "/out/x.xlsx" if rc in (0, 4) else None,
+                "detail": "AuthorizationFailed: no access" if rc == 1 else "",
             }
             with open(manifest, "a", encoding="utf-8") as fh:
                 fh.write(json.dumps(record) + "\n")
@@ -110,13 +111,14 @@ def test_per_exporter_lines_and_summary(monkeypatch, manifest, capsys):
     assert "4 exporter run(s): 1 EMPTY, 1 FAILED, 1 OK, 1 PARTIAL" in out
     assert [o["Status"] for o in outcomes] == ["OK", "EMPTY", "PARTIAL", "FAILED"]
     assert stratusscan.has_failures(outcomes)
+    assert [o["Detail"] for o in outcomes] == ["", "", "", "AuthorizationFailed: no access"]
 
 
 def test_run_report_columns_and_content(monkeypatch, tmp_path):
     monkeypatch.setattr(utils, "__file__", str(tmp_path / "utils.py"))
     outcomes = [{
         "Exporter": "Storage Accounts", "Subscription": "Sub One", "Status": "PARTIAL", "Rows": 23,
-        "Errors": 3, "Duration (s)": 4.1, "File": "/out/x.xlsx", "Exit Code": 4,
+        "Errors": 3, "Duration (s)": 4.1, "File": "/out/x.xlsx", "Exit Code": 4, "Detail": "3 scope(s) failed",
     }]
 
     path = stratusscan.write_run_report(outcomes, "all", "run-R")
@@ -127,6 +129,7 @@ def test_run_report_columns_and_content(monkeypatch, tmp_path):
     assert list(df.columns) == stratusscan.RUN_REPORT_COLUMNS
     assert df.iloc[0]["Status"] == "PARTIAL"
     assert int(df.iloc[0]["Errors"]) == 3
+    assert df.iloc[0]["Detail"] == "3 scope(s) failed"
     assert stratusscan.write_run_report([], "all", "run-R") is None
 
 
