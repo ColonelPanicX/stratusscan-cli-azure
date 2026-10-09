@@ -470,6 +470,7 @@ def _launch(label: str, path: str, sub_id: str, sub_name: str, run_id: str, outc
         "Duration (s)": duration,
         "File": record.get("file") or "",
         "Exit Code": "" if rc is None else rc,
+        "Detail": "" if status in (STATUS_OK, STATUS_EMPTY) else record.get("detail") or "",
     })
     return status
 
@@ -590,7 +591,7 @@ def has_failures(outcomes: list) -> bool:
 
 
 RUN_REPORT_COLUMNS = [
-    "Exporter", "Subscription", "Status", "Rows", "Errors", "Duration (s)", "File", "Exit Code",
+    "Exporter", "Subscription", "Status", "Rows", "Errors", "Duration (s)", "File", "Exit Code", "Detail",
 ]
 
 
