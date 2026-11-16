@@ -1529,3 +1529,22 @@ def test_app_service_main_goes_partial_when_a_config_read_fails(monkeypatch, tmp
     assert result.rows == 1
     assert len(result.errors) == 1
     assert sheets[0][2] == result.errors
+
+
+def test_resource_tags_resource_type_casing_is_normalized(monkeypatch):
+    import resource_tags_export
+
+    resources = [
+        SimpleNamespace(id="/subscriptions/s/resourceGroups/rg/a", name="a", type="Microsoft.Compute/virtualMachines", tags=None, location="x"),
+        SimpleNamespace(id="/subscriptions/s/resourceGroups/rg/b", name="b", type="microsoft.compute/VIRTUALMACHINES", tags=None, location="x"),
+    ]
+    saved = {}
+    monkeypatch.setattr(resource_tags_export, "collect_resources", lambda _sub: resources)
+    monkeypatch.setattr(resource_tags_export.utils, "detect_environment", lambda: "public")
+    monkeypatch.setattr(resource_tags_export.utils, "create_export_filename", lambda *a: "f.xlsx")
+    monkeypatch.setattr(resource_tags_export.utils, "save_multiple_dataframes_to_excel",
+                        lambda sheets, filename, errors=None: saved.update(sheets))
+
+    resource_tags_export.main("s", "Sub")
+
+    assert saved["Tag Coverage"]["Resource Type"].nunique() == 1

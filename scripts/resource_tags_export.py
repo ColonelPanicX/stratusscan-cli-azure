@@ -43,7 +43,7 @@ def main(subscription_id: str, subscription_name: str) -> utils.ExportResult:
             key_values[k].add(v)
         coverage_rows.append({
             "Resource Name": r.name,
-            "Resource Type": r.type,
+            "Resource Type": (r.type or "").lower(),
             "Resource Group": rg,
             "Location": getattr(r, "location", "") or "",
             "Tag Count": len(tags),
